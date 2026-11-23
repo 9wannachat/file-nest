@@ -1,0 +1,25 @@
+# Local development variables. Copy to `.dev.vars` (git-ignored):
+#   cp .dev.vars.example .dev.vars
+# Use placeholder / test values only. Never paste production secrets here
+# unless you understand they stay on this machine.
+
+ENVIRONMENT=development
+APP_ORIGIN=http://localhost:5173
+
+# Google OAuth (optional locally if you use DEV_AUTH below)
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=replace-me
+
+BOOTSTRAP_ADMIN_EMAIL=admin@example.test
+
+# 32 random bytes, base64. Generate: openssl rand -base64 32
+APP_ENCRYPTION_KEY=REPLACE_WITH_BASE64_32_BYTES
+
+# Local fake S3 (scripts/fake-s3.ts). Only honoured when ENVIRONMENT=development.
+DEV_S3_ENDPOINT=http://localhost:9000
+R2_LOCAL_ACCESS_KEY_ID=dev-access-key
+R2_LOCAL_SECRET_ACCESS_KEY=dev-secret-key
+
+# Passwordless dev login at /auth/dev-login. Only works when
+# ENVIRONMENT=development AND the request host is localhost/127.0.0.1.
+DEV_AUTH=1

@@ -1,0 +1,53 @@
+// FileNest Worker configuration template.
+// Copy to `wrangler.jsonc` (git-ignored) and fill in your own values:
+//   cp wrangler.example.jsonc wrangler.jsonc
+// Values here are NOT secrets. Secrets go in `wrangler secret put` (production)
+// or `.dev.vars` (local). See README.md.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "filenest",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-11-15",
+  "observability": { "enabled": true },
+
+  // UI, API and share links on one origin. These paths always reach the Worker
+  // before static assets / SPA fallback.
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/auth/*", "/s/*", "/__dev/*"]
+  },
+
+  // One central D1 database. Replace database_id after `wrangler d1 create filenest`.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "filenest",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Cleanup of expired upload sessions, staging/orphan objects and old trash.
+  "triggers": { "crons": ["*/15 * * * *"] },
+
+  "vars": {
+    "ENVIRONMENT": "production",
+    // Public origin of the app, e.g. https://files.example.com (no trailing slash)
+    "APP_ORIGIN": "https://files.example.com",
+    // Google OAuth client ID (public). The client secret is a Worker Secret.
+    "GOOGLE_CLIENT_ID": "your-client-id.apps.googleusercontent.com",
+    // First person to sign in with this verified email becomes Admin,
+    // only while no Admin exists yet.
+    "BOOTSTRAP_ADMIN_EMAIL": "admin@example.com",
+    "MAX_UPLOAD_BYTES": "536870912",
+    "DEFAULT_QUOTA_BYTES": "10737418240",
+    "UPLOAD_RATE_PER_HOUR": "100",
+    "TRASH_RETENTION_DAYS": "30"
+  }
+
+  // Secrets (set with `wrangler secret put NAME`):
+  //   GOOGLE_CLIENT_SECRET
+  //   APP_ENCRYPTION_KEY            32 random bytes, base64 (openssl rand -base64 32)
+  //   R2_<REF>_ACCESS_KEY_ID        per storage target, e.g. R2_MAIN_ACCESS_KEY_ID
+  //   R2_<REF>_SECRET_ACCESS_KEY    per storage target, e.g. R2_MAIN_SECRET_ACCESS_KEY
+}
