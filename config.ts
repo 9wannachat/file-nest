@@ -1,4 +1,9 @@
 import { existsSync } from "node:fs";
 
-/** Use the installer's wrangler.jsonc when present, else the committed template. */
-export const wranglerConfigPath = existsSync("wrangler.jsonc") ? "wrangler.jsonc" : "wrangler.example.jsonc";
+/**
+ * Wrangler config used by Vite/Vitest:
+ *  - FILENEST_WRANGLER_CONFIG (E2E uses a generated config under .wrangler/e2e/)
+ *  - else the installer's wrangler.jsonc, else the committed template.
+ */
+export const wranglerConfigPath =
+  process.env.FILENEST_WRANGLER_CONFIG ?? (existsSync("wrangler.jsonc") ? "wrangler.jsonc" : "wrangler.example.jsonc");

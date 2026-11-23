@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.web.json",
+  "compilerOptions": {
+    "types": ["vite/client", "vite-plugin-pwa/client", "@testing-library/jest-dom/vitest", "node"]
+  },
+  "include": ["src/web", "src/shared", "tests/web"]
+}

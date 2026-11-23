@@ -2,9 +2,28 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath, URL } from "node:url";
-import { defineConfig } from "vite";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { defineConfig, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { wranglerConfigPath } from "./config.ts";
+
+/**
+ * Local/E2E only: allow presigned uploads to a fake R2 on localhost by
+ * appending FILENEST_CSP_CONNECT_EXTRA to connect-src in the built _headers.
+ * Production builds leave the CSP untouched.
+ */
+function cspConnectExtra(): Plugin {
+  return {
+    name: "filenest-csp-connect-extra",
+    apply: "build",
+    closeBundle() {
+      const extra = process.env.FILENEST_CSP_CONNECT_EXTRA;
+      const file = "dist/client/_headers";
+      if (!extra || !/^[a-z0-9:/. -]+$/i.test(extra) || !existsSync(file)) return;
+      writeFileSync(file, readFileSync(file, "utf8").replace("connect-src 'self'", `connect-src 'self' ${extra}`));
+    },
+  };
+}
 
 export default defineConfig({
   resolve: {
@@ -13,11 +32,16 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./src/web", import.meta.url)),
     },
   },
-  server: { port: 5173, strictPort: true },
+  server: { port: 8788, strictPort: true },
   plugins: [
+    cspConnectExtra(),
     react(),
     tailwindcss(),
-    cloudflare({ configPath: wranglerConfigPath }),
+    cloudflare({
+      configPath: wranglerConfigPath,
+      // E2E runs use an isolated local D1/state directory.
+      persistState: process.env.FILENEST_STATE_DIR ? { path: process.env.FILENEST_STATE_DIR } : true,
+    }),
     VitePWA({
       registerType: "prompt",
       injectRegister: false,

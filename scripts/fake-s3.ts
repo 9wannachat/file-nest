@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { createFakeS3, type ObjectStore, type StoredObject } from "../src/dev/fake-s3.ts";
 
 const PORT = Number(process.env.FAKE_S3_PORT ?? 9000);
-const DIR = join(process.cwd(), ".dev-data", "fake-s3");
+const DIR = process.env.FAKE_S3_DIR ?? join(process.cwd(), ".dev-data", "fake-s3");
 mkdirSync(DIR, { recursive: true });
 const fileFor = (k: string) => join(DIR, createHash("sha256").update(k).digest("hex"));
 
@@ -38,7 +38,7 @@ const disk: ObjectStore = {
   },
 };
 
-const origins = (process.env.FAKE_S3_ORIGINS ?? "http://localhost:5173,http://127.0.0.1:5173").split(",");
+const origins = (process.env.FAKE_S3_ORIGINS ?? "http://localhost:8788,http://127.0.0.1:8788").split(",");
 const s3 = createFakeS3({ store: disk, allowedOrigins: origins });
 
 createServer(async (req, res) => {

@@ -19,4 +19,4 @@ if (!existsSync(".dev.vars")) {
 const run = (args) => execFileSync("pnpm", ["exec", "wrangler", ...args], { stdio: "inherit" });
 run(["d1", "migrations", "apply", "DB", "--local"]);
 run(["d1", "execute", "DB", "--local", "--file", "scripts/seed-local.sql"]);
-console.log("\nLocal setup done. Run `pnpm dev`, then open http://localhost:5173/auth/dev-login");
+console.log("\nLocal setup done. Run `pnpm dev`, then open http://localhost:8788/auth/dev-login");
