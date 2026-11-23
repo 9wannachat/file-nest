@@ -110,7 +110,7 @@ export async function login(user: User, now = Date.now()): Promise<Login> {
   return { user, cookie: `__Host-fn_session=${token}`, csrf: session.csrfToken };
 }
 
-export async function makeTarget(p: { name: string; accountId: string; bucket: string; ref: "A" | "B"; isDefault?: boolean }) {
+export async function makeTarget(p: { name: string; accountId: string; bucket: string; ref: "A" | "B"; isDefault?: boolean; capacityBytes?: number | null; priority?: number }) {
   const id = crypto.randomUUID();
   const now = Date.now();
   await db()
@@ -122,10 +122,12 @@ export async function makeTarget(p: { name: string; accountId: string; bucket: s
       bucket: p.bucket,
       credentialRef: p.ref,
       acceptingUploads: true,
+      // Tests default to unlimited capacity; isDefault puts the target first in line.
+      capacityBytes: p.capacityBytes ?? null,
+      priority: p.priority ?? (p.isDefault ? 0 : 10),
       createdAt: now,
       updatedAt: now,
     });
-  if (p.isDefault) await db().update(appSettings).set({ defaultStorageId: id }).where(eq(appSettings.id, 1));
   return id;
 }
 

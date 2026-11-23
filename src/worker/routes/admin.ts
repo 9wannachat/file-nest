@@ -73,7 +73,7 @@ admin.get("/overview", async (c) => {
     })
     .from(storageTargets);
   const recentEvents = await db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(10);
-  const settings = await getSettings(db, c.get("config"));
+  const cap = await storage.capacitySummary(db, t);
   const near = await db.get<{ n: number; over: number }>(sql`
     SELECT sum(CASE WHEN used >= quota * 0.8 THEN 1 ELSE 0 END) AS n, sum(CASE WHEN used > quota THEN 1 ELSE 0 END) AS over
     FROM (SELECT u.quota_bytes AS quota, (SELECT coalesce(sum(f.size), 0) FROM files f WHERE f.owner_id = u.id) AS used
@@ -86,7 +86,7 @@ admin.get("/overview", async (c) => {
     signedInUsers: ss.n,
     storage: perStorage,
     recentEvents,
-    capacity: { capBytes: settings.storageCapBytes, membersNearQuota: Number(near?.n ?? 0), membersOverQuota: Number(near?.over ?? 0) },
+    capacity: { capBytes: cap.capacityBytes, freeBytes: cap.freeBytes, largestFreeBytes: cap.largestFreeBytes, membersNearQuota: Number(near?.n ?? 0), membersOverQuota: Number(near?.over ?? 0) },
   });
 });
 
@@ -316,9 +316,8 @@ admin.get("/usage", async (c) => {
       return { ...r, quotaUnlimited: unlimited, percent: pct };
     })
     .filter((r) => (filter === "near" ? (r.percent ?? 0) >= 80 : filter === "over" ? (r.percent ?? 0) > 100 : true));
-  const settings = await getSettings(c.get("db"), c.get("config"));
-  const total = await c.get("db").get<{ n: number }>(sql`SELECT coalesce(sum(size), 0) AS n FROM files`);
-  return c.json({ members: list, totalBytes: total?.n ?? 0, capBytes: settings.storageCapBytes });
+  const cap = await storage.capacitySummary(c.get("db"), now(c));
+  return c.json({ members: list, totalBytes: cap.usedBytes, capBytes: cap.capacityBytes });
 });
 
 /** Set the same quota (bytes, or null = unlimited) for up to 100 members, atomically. */
@@ -434,7 +433,14 @@ admin.put("/settings", async (c) => {
 
 admin.get("/storage", async (c) => {
   const ctx = storageCtx(c);
-  return c.json({ targets: await storage.listTargets(ctx), defaultStorageId: await storage.getDefaultStorageId(ctx.db) });
+  const summary = await storage.capacitySummary(ctx.db, now(c));
+  return c.json({ targets: await storage.listTargets(ctx), defaultStorageId: summary.nextTargetId, summary });
+});
+/** Placement order: body { ids: [...every target id, first = filled first] }. */
+admin.put("/storage-order", async (c) => {
+  recent(c);
+  const b = await jsonBody(c);
+  return c.json(await storage.reorderTargets(storageCtx(c), authOf(c).user, b.ids));
 });
 admin.post("/storage", async (c) => {
   recent(c);

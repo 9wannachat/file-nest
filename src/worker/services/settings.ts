@@ -19,8 +19,6 @@ export interface SystemSettings {
   trashRetentionDays: number;
   publicLinksEnabled: boolean;
   publicLinksRequirePassword: boolean;
-  /** Total bytes across all members (null = no system-wide cap). */
-  storageCapBytes: number | null;
 }
 
 export function defaultSettings(config: AppConfig): SystemSettings {
@@ -35,7 +33,6 @@ export function defaultSettings(config: AppConfig): SystemSettings {
     trashRetentionDays: config.trashRetentionDays,
     publicLinksEnabled: true,
     publicLinksRequirePassword: false,
-    storageCapBytes: null,
   };
 }
 
@@ -57,7 +54,6 @@ const V: { [K in keyof SystemSettings]: (v: unknown, config: AppConfig) => Syste
   trashRetentionDays: (v) => int(v, "trashRetentionDays", 1, 3650),
   publicLinksEnabled: (v) => bool(v, "publicLinksEnabled"),
   publicLinksRequirePassword: (v) => bool(v, "publicLinksRequirePassword"),
-  storageCapBytes: (v) => (v === null ? null : int(v, "storageCapBytes", 1, Number.MAX_SAFE_INTEGER)),
 };
 
 function bool(v: unknown, k: string): boolean {

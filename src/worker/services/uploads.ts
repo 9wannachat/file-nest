@@ -22,7 +22,7 @@ import { cleanName, withSuffix } from "../lib/names.ts";
 import { log } from "../lib/log.ts";
 import { StorageError } from "../storage/s3.ts";
 import { fileDtoFor, isUniqueViolation } from "./drive.ts";
-import { bucketById, targetForNewUpload, type StorageCtx } from "./storage.ts";
+import { bucketById, type StorageCtx } from "./storage.ts";
 import { getSettings } from "./settings.ts";
 import { reserveAttempt, tooMany } from "./authn.ts";
 
@@ -65,67 +65,64 @@ export async function createUpload(
     .bind(user.id, now)
     .first<{ locked_until: number }>();
   if (throttled) throw tooMany({ retryAfterMs: throttled.locked_until - now });
-  const target = await targetForNewUpload(db);
   const id = crypto.randomUUID();
   const fileId = crypto.randomUUID();
-  const s: UploadSession = {
+  const s = {
     id,
-    ownerId: user.id,
-    folderId,
     fileId,
-    name,
-    declaredSize: size,
-    declaredMime,
-    storageId: target.id,
     stagingKey: `staging/${crypto.randomUUID()}`,
     finalKey: `files/${fileId}/${crypto.randomUUID()}`,
-    state: "pending",
-    leaseUntil: null,
-    errorCode: null,
-    createdAt: now,
     expiresAt: now + SESSION_TTL_MS,
-    completedAt: null,
   };
+  const live = sql`(state = 'finalizing' OR (state = 'pending' AND expires_at >= ${now}))`;
 
-  // Member quota (files incl. trash + in-flight uploads) and the system-wide cap are
-  // checked and reserved in ONE statement, so concurrent creates cannot overshoot.
-  const cap = settings.storageCapBytes;
-  const res = await db.run(sql`
+  // ONE statement picks the storage target and reserves the space:
+  //  - target: first by priority that accepts uploads, has not failed its last health
+  //    check, and has room (capacity - stored files - live reservations >= size)
+  //  - member: quota (files incl. trash + live reservations) unless unlimited
+  // so concurrent creates can never overfill a target or a member's quota.
+  const placed = await db.get<{ storage_id: string }>(sql`
+    WITH pick AS (
+      SELECT t.id AS id FROM storage_targets t
+      WHERE t.accepting_uploads = 1 AND (t.last_check_ok IS NULL OR t.last_check_ok = 1)
+        AND (t.capacity_bytes IS NULL OR
+             (SELECT coalesce(sum(f.size), 0) FROM files f WHERE f.storage_id = t.id)
+           + (SELECT coalesce(sum(us.declared_size), 0) FROM upload_sessions us WHERE us.storage_id = t.id AND ${live})
+           + ${size} <= t.capacity_bytes)
+      ORDER BY t.priority, t.created_at, t.id
+      LIMIT 1
+    )
     INSERT INTO upload_sessions (id, owner_id, folder_id, file_id, name, declared_size, declared_mime, storage_id,
                                  staging_key, final_key, state, created_at, expires_at)
-    SELECT ${s.id}, ${s.ownerId}, ${s.folderId}, ${s.fileId}, ${s.name}, ${s.declaredSize}, ${s.declaredMime},
-           ${s.storageId}, ${s.stagingKey}, ${s.finalKey}, 'pending', ${s.createdAt}, ${s.expiresAt}
-    WHERE (
-        (SELECT quota_unlimited FROM users WHERE id = ${user.id}) = 1
-        OR (SELECT coalesce(sum(size), 0) FROM files WHERE owner_id = ${user.id})
-         + (SELECT coalesce(sum(declared_size), 0) FROM upload_sessions
-            WHERE owner_id = ${user.id} AND (state = 'finalizing' OR (state = 'pending' AND expires_at >= ${now})))
-         + ${size} <= (SELECT quota_bytes FROM users WHERE id = ${user.id})
-      )
-      AND (
-        ${cap} IS NULL
-        OR (SELECT coalesce(sum(size), 0) FROM files)
-         + (SELECT coalesce(sum(declared_size), 0) FROM upload_sessions
-            WHERE state = 'finalizing' OR (state = 'pending' AND expires_at >= ${now}))
-         + ${size} <= ${cap}
-      )`);
-  if (res.meta.changes !== 1) {
+    SELECT ${s.id}, ${user.id}, ${folderId}, ${s.fileId}, ${name}, ${size}, ${declaredMime},
+           pick.id, ${s.stagingKey}, ${s.finalKey}, 'pending', ${now}, ${s.expiresAt}
+    FROM pick
+    WHERE (SELECT quota_unlimited FROM users WHERE id = ${user.id}) = 1
+       OR (SELECT coalesce(sum(size), 0) FROM files WHERE owner_id = ${user.id})
+        + (SELECT coalesce(sum(declared_size), 0) FROM upload_sessions WHERE owner_id = ${user.id} AND ${live})
+        + ${size} <= (SELECT quota_bytes FROM users WHERE id = ${user.id})
+    RETURNING storage_id`);
+
+  if (!placed) {
     // Rejected creates also spend a budget, so nobody can probe free space or force
     // repeated full-table sums for free.
     const budget = await reserveAttempt(db, "upload-rejected", user.id, now, 20);
     if (!budget.ok) throw tooMany(budget);
-    // Tell the member which limit was hit (both are about storage, neither leaks data).
     const mine = await db.run(sql`SELECT 1 FROM users WHERE id = ${user.id} AND (quota_unlimited = 1 OR
         (SELECT coalesce(sum(size), 0) FROM files WHERE owner_id = ${user.id})
-      + (SELECT coalesce(sum(declared_size), 0) FROM upload_sessions
-         WHERE owner_id = ${user.id} AND (state = 'finalizing' OR (state = 'pending' AND expires_at >= ${now})))
+      + (SELECT coalesce(sum(declared_size), 0) FROM upload_sessions WHERE owner_id = ${user.id} AND ${live})
       + ${size} <= quota_bytes)`);
-    if (mine.results?.length) throw new HttpError(507, "system_storage_full", "FileNest is out of storage. Ask an Admin to free space or raise the limit.");
-    throw new HttpError(413, "quota_exceeded", "Storage quota exceeded");
+    if (!mine.results?.length) throw new HttpError(413, "quota_exceeded", "Storage quota exceeded");
+    const eligible = await db.get<{ n: number }>(sql`SELECT count(*) AS n FROM storage_targets
+      WHERE accepting_uploads = 1 AND (last_check_ok IS NULL OR last_check_ok = 1)`);
+    if (!eligible?.n) throw new HttpError(503, "no_storage_accepting", "No storage is accepting uploads. Ask an Admin to configure storage.");
+    // A single file cannot be split across buckets.
+    throw new HttpError(507, "storage_full", "No storage location has room for a file this size. Ask an Admin to add capacity.");
   }
+  const storageId = placed.storage_id;
 
   const contentType = declaredMime ?? "application/octet-stream";
-  const bucket = await bucketById(ctx, target.id);
+  const bucket = await bucketById(ctx, storageId);
   // Content-Length is signed too, so the staging object cannot exceed the declared size.
   const putUrl = await bucket.presignPut(s.stagingKey, contentType, PUT_URL_TTL_S, size);
   return {

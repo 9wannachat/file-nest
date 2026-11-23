@@ -85,6 +85,13 @@ export interface StorageTargetInfo {
   createdAt: number;
   isDefault: boolean;
   references: { files: number; uploadSessions: number };
+  capacityBytes: number | null;
+  priority: number;
+  order: number;
+  usedBytes: number;
+  reservedBytes: number;
+  freeBytes: number | null;
+  eligible: boolean;
 }
 
 export interface StorageCheck {
@@ -157,7 +164,6 @@ export interface SystemSettings {
   trashRetentionDays: number;
   publicLinksEnabled: boolean;
   publicLinksRequirePassword: boolean;
-  storageCapBytes: number | null;
 }
 
 export interface AdminMember extends Member {

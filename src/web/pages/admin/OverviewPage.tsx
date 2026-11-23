@@ -61,7 +61,7 @@ export function OverviewPage() {
           icon={<FileStack />}
           label="Storage used"
           value={formatBytes(n(data.files.bytes))}
-          hint={`${data.capacity.capBytes ? `of ${formatBytes(data.capacity.capBytes)} limit · ` : ""}${n(data.files.count)} files · ${data.capacity.membersNearQuota} member(s) ≥80% of quota`}
+          hint={`${data.capacity.capBytes ? `of ${formatBytes(data.capacity.capBytes)} capacity · ` : ""}${n(data.files.count)} files · ${data.capacity.membersNearQuota} member(s) ≥80% of quota`}
           to="/admin/usage"
         />
         <Stat icon={<Upload />} label="Uploads (24 h)" value={n(data.uploads24h.n)} hint={formatBytes(n(data.uploads24h.bytes))} />

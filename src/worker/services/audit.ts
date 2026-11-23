@@ -32,7 +32,8 @@ export type AuditAction =
   | "storage.create"
   | "storage.update"
   | "storage.delete"
-  | "storage.default_switch";
+  | "storage.default_switch"
+  | "storage.reorder";
 
 /** Build an audit insert (use inside db.batch for atomicity). Metadata must not contain secrets. */
 export function auditInsert(

@@ -60,6 +60,8 @@ export const storageTargets = sqliteTable("storage_targets", {
   bucket: text("bucket").notNull(),
   credentialRef: text("credential_ref").notNull(),
   acceptingUploads: integer("accepting_uploads", { mode: "boolean" }).notNull(),
+  capacityBytes: integer("capacity_bytes"),
+  priority: integer("priority").notNull(),
   lastCheckAt: integer("last_check_at"),
   lastCheckOk: integer("last_check_ok", { mode: "boolean" }),
   lastCheckMessage: text("last_check_message"),

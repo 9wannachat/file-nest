@@ -139,17 +139,20 @@ pnpm exec wrangler deploy
 ### 7. First sign-in
 
 Open `APP_ORIGIN`, sign in with `BOOTSTRAP_ADMIN_EMAIL`. That account becomes Admin **only if no Admin exists yet**. Then:
-- **Admin → Storage → Add R2 storage target**: name, Cloudflare **account ID** (32 hex), bucket, credential ref (`MAIN`). The first target becomes the default.
+- **Admin → Storage → Add R2 storage target**: name, Cloudflare **account ID** (32 hex), bucket, credential ref (`MAIN`) and **capacity** (default 10 GB, R2's free storage per account; can be Unlimited).
 - Click **Check**. It writes, reads and deletes a probe object, then runs a CORS preflight. Fix anything it reports.
 - **Admin → Members → Invite** teammates by their Google email.
 
-## Adding a second R2 account
+## Adding more R2 accounts (capacity adds up)
+
+Each R2 target has its own **capacity**; FileNest's total storage is the **sum** of the targets that accept uploads. Example: A = 10 GB, B = 10 GB → 20 GB.
 
 1. In the **other** Cloudflare account, create a bucket, a bucket-scoped Object Read & Write token, and the same CORS rule.
 2. In the FileNest Worker, add secrets with a new ref, e.g. `B`: `R2_B_ACCESS_KEY_ID`, `R2_B_SECRET_ACCESS_KEY`.
-3. Admin → Storage → Add target with the **other** account ID, the bucket and ref `B` → **Check**.
-4. Click **Make default**. New uploads go to B. Existing files keep reading from A, and uploads that already started keep their original bucket.
-5. To stop new files going to A, turn off **Accept** on A. Its files stay readable. A target that still has files or upload sessions cannot be deleted, and its bucket/account cannot be edited. Add a new target instead.
+3. Admin → Storage → Add target with the **other** account ID, the bucket, ref `B` and its capacity → **Check**. New targets are added at the end of the order.
+4. **Placement is automatic:** each upload goes to the first target in the order (↑/↓ on the Storage page) that accepts uploads, passed its last health check, and has room for that file. When A is full, files go to B. A file is never split across buckets, so a file larger than any single target's free space is rejected ("no storage location has room") even if the total free space would be enough; the Storage page shows the largest file that fits.
+5. Files stay in the bucket they were uploaded to; uploads in progress keep the bucket they were given. Lowering a capacity below what is stored is allowed: that target just receives no new files. Turn off **Accept uploads** to pause a target; its files stay readable. A target that still has files or upload sessions cannot be deleted, and its bucket/account cannot be edited.
+6. Capacity is FileNest's own accounting of stored bytes (R2 has no "free space" API). R2's free tier also limits operations per month; watch those in the Cloudflare dashboard.
 
 ## Accounts, 2FA and the Admin Console
 
@@ -169,8 +172,8 @@ Open `APP_ORIGIN`, sign in with `BOOTSTRAP_ADMIN_EMAIL`. That account becomes Ad
 - **Per member quota:** set in Admin Console → Members (or in bulk on **Usage**), including **Unlimited**. New members get the default quota from Settings; an invitation can set its own.
 - **What counts:** every stored file, **including the trash**, plus uploads that are in progress. Members see a meter in the sidebar, a warning at 80% and a red banner at 95%/full, and files that would not fit are rejected before uploading. **Empty trash** (Trash page) frees space immediately.
 - **Lowering a quota below current usage** keeps all files; the member just cannot upload until they are under the limit again.
-- **Total storage limit:** Admin Console → Settings → *Total storage limit* caps all members together (default: no limit) to keep R2 costs predictable. When it is reached, uploads stop for everyone with a "FileNest is out of storage" message.
-- Limits count stored files and in-progress uploads. Briefly after an upload is cancelled, R2 may still hold its staging bytes until cleanup (≈15 min), so real R2 usage can exceed the cap by at most a few uploads' worth.
+- **Total capacity:** the sum of the R2 targets' capacities (see *Adding more R2 accounts*). When no target has room for a file, uploads are refused with "no storage location has room".
+- Limits count stored files and in-progress uploads. Briefly after an upload is cancelled, R2 may still hold its staging bytes until cleanup (≈15 min), so real R2 usage can exceed a target's capacity by at most a few uploads' worth.
 - Granting **Unlimited** and bulk quota changes need a recent sign-in, and every quota change is recorded in the audit log with the previous and new value. Repeated uploads that are rejected for space are throttled.
 
 ## AI assistants (MCP)
@@ -292,7 +295,7 @@ pnpm e2e
 | API tokens + MCP: list, inline image, download, path-escape refusal, upload | ✅ local (stdio MCP → Worker → local D1 → fake R2) · 🟡 real Claude Desktop/Code client |
 | Password links: locked page, unlock in a real browser, cookie invalidation, lockout | ✅ local + E2E · 🟡 PBKDF2 CPU time on real Workers |
 | Password sign-up via invitation, TOTP 2FA (enroll, sign in, recovery codes, replay protection), admin ban/reset/settings | ✅ local + E2E · 🟡 real authenticator apps on phones, PBKDF2 limits/CPU on deployed Workers |
-| Storage limits: member quota/unlimited, trash counted, Empty trash, system cap, warnings, pre-check, usage page | ✅ local + E2E |
+| Storage limits: member quota/unlimited, trash counted, Empty trash, per-R2 capacity summed with automatic placement, warnings, pre-check, usage page | ✅ local + E2E · 🟡 real multi-account R2 |
 | Fresh install from this README with one R2 account | 🟡 not yet run against real Cloudflare |
 
 ## License

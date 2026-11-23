@@ -61,7 +61,7 @@ describe("create upload session", () => {
   });
 
   it("503 when no storage accepts uploads", async () => {
-    await testEnv.DB.prepare("UPDATE app_settings SET default_storage_id = NULL").run();
+    await testEnv.DB.prepare("UPDATE storage_targets SET accepting_uploads = 0").run();
     expect((await create(alice, { name: "a", size: 1 })).status).toBe(503);
   });
 });

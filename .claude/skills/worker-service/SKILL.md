@@ -16,10 +16,11 @@ Backend changes, R2 default switching, upload/finalize, content streaming.
 - Atomic multi-write: `db.batch([...builders])` or ``atomicBatch(db.$client, [sql`...`, builder])``.
 - Streaming: `serveFile(ctx, file, req, "preview"|"download", {share})`.
 
-## R2 switching checklist
-1. `PUT /api/admin/storage-default` only changes `app_settings.default_storage_id` (+audit).
-2. New sessions read the default at creation; existing sessions keep their `storage_id`.
-3. Tests: upload on A, switch, finish an A-pinned session, upload on B, read both — assert fake-S3 host + access key per request.
+## R2 capacity & placement checklist
+1. Each target has `capacity_bytes` (NULL = unlimited) and `priority`; total capacity = sum of eligible targets.
+2. `createUpload` picks the target AND reserves space in one `WITH pick … INSERT … SELECT … RETURNING storage_id` (first by `priority, created_at, id` that accepts uploads, has not failed its last check and has room). Never pick a target in a separate query.
+3. `PUT /api/admin/storage-order` (and legacy `storage-default` = move to top) only reorders; existing sessions keep their pinned `storage_id`.
+4. Tests: fill A, next file lands on B, a file larger than any single free space is 507, concurrent creates never overfill — assert fake-S3 host + access key per request.
 
 ## Deliverable
 Code + tests + `pnpm typecheck && pnpm test:worker` output.

@@ -60,32 +60,6 @@ describe("member quota", () => {
   });
 });
 
-describe("system-wide storage cap", () => {
-  it("blocks uploads for everyone once the cap is reached, with a distinct error", async () => {
-    const bob = await login(await makeUser({ quotaBytes: 100 }));
-    await call(admin, "PATCH", `/api/admin/members/${alice.user.id}`, { quotaBytes: 100 });
-    expect((await call(admin, "PUT", "/api/admin/settings", { storageCapBytes: 12 })).status).toBe(200);
-    await uploadFile(t, alice, "a.bin", "12345678");
-    const r = await create(bob, 5);
-    expect(r.status).toBe(507);
-    expect(((await r.json()) as { error: { code: string } }).error.code).toBe("system_storage_full");
-    expect((await create(bob, 4)).status).toBe(201);
-    expect((await call(admin, "PUT", "/api/admin/settings", { storageCapBytes: null })).status).toBe(200);
-    expect((await create(bob, 50)).status).toBe(201);
-  });
-
-  it("concurrent uploads cannot overshoot the cap (reservations count)", async () => {
-    await call(admin, "PATCH", `/api/admin/members/${alice.user.id}`, { quotaBytes: null });
-    await call(admin, "PUT", "/api/admin/settings", { storageCapBytes: 10 });
-    const rs = await Promise.all([1, 2, 3, 4, 5].map(() => create(alice, 3)));
-    expect(rs.filter((r) => r.status === 201)).toHaveLength(3);
-  });
-
-  it("rejects invalid cap values", async () => {
-    for (const v of [0, -1, "10", 1.5]) expect((await call(admin, "PUT", "/api/admin/settings", { storageCapBytes: v })).status).toBe(400);
-  });
-});
-
 describe("admin usage", () => {
   it("lists usage with filters, bulk-sets quotas, and is admin-only", async () => {
     const bob = await login(await makeUser({ quotaBytes: 100 }));
@@ -103,7 +77,7 @@ describe("admin usage", () => {
     expect((await call(admin, "POST", "/api/admin/members/bulk-quota", { userIds: [], quotaBytes: 5 })).status).toBe(400);
 
     const ov = (await (await call(admin, "GET", "/api/admin/overview")).json()) as { capacity: { capBytes: number | null } };
-    expect(ov.capacity.capBytes).toBeNull();
+    expect(ov.capacity.capBytes).toBeNull(); // the test target is unlimited
 
     expect((await call(alice, "GET", "/api/admin/usage")).status).toBe(403);
     expect((await call(alice, "POST", "/api/admin/members/bulk-quota", { userIds: [alice.user.id], quotaBytes: null })).status).toBe(403);

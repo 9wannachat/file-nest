@@ -54,16 +54,16 @@ describe("storage targets", () => {
     const m = await login(await makeUser());
     const { file } = await uploadFile(t, m, "x.txt", "data", { mime: "text/plain" });
     expect((await post(`/api/admin/storage/${a}`, { bucket: "other-bucket" }, "PATCH")).status).toBe(409);
-    expect((await post(`/api/admin/storage/${a}`, { acceptingUploads: false }, "PATCH")).status).toBe(409); // is default
-    expect((await post("/api/admin/storage-default", { storageId: b }, "PUT")).status).toBe(200);
+    expect((await post("/api/admin/storage-default", { storageId: b }, "PUT")).status).toBe(200); // move B to the front
     expect((await post(`/api/admin/storage/${a}`, { acceptingUploads: false }, "PATCH")).status).toBe(200);
     expect((await t.call(`/api/admin/storage/${a}`, { method: "DELETE", as: admin })).status).toBe(409);
     expect(await (await t.call(`/api/files/${file.id}/download`, { as: m })).text()).toBe("data");
     expect((await post("/api/admin/storage-default", { storageId: a }, "PUT")).status).toBe(409); // not accepting
-    const ev = await db().select().from(auditEvents).where(eq(auditEvents.action, "storage.default_switch"));
+    const ev = await db().select().from(auditEvents).where(eq(auditEvents.action, "storage.reorder"));
     expect(ev).toHaveLength(1);
     expect(ev[0]!.actorUserId).toBe(admin.user.id);
     expect(ev[0]!.resourceId).toBe(b);
+    expect(JSON.parse(ev[0]!.metadata!).order).toBe(`${b},${a}`);
   });
 });
 

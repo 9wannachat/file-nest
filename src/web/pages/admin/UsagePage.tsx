@@ -66,12 +66,12 @@ export function UsagePage() {
         <CardHeader>
           <CardTitle>Total storage</CardTitle>
           <CardDescription>
-            {formatBytes(data.totalBytes)} used{data.capBytes ? ` of ${formatBytes(data.capBytes)} system limit` : " · no system limit"}
+            {formatBytes(data.totalBytes)} used{data.capBytes ? ` of ${formatBytes(data.capBytes)} total capacity (all R2 targets)` : " · no capacity limit"}
           </CardDescription>
         </CardHeader>
         {capPct !== null ? (
           <CardContent>
-            <Progress value={capPct} aria-label="System storage used" className={capPct >= 95 ? "[&>div]:bg-destructive" : capPct >= 80 ? "[&>div]:bg-warning" : undefined} />
+            <Progress value={capPct} aria-label="Total storage used" className={capPct >= 95 ? "[&>div]:bg-destructive" : capPct >= 80 ? "[&>div]:bg-warning" : undefined} />
           </CardContent>
         ) : null}
       </Card>

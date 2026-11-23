@@ -333,6 +333,50 @@ test("storage quota: warning, blocked upload, Empty trash frees space", async ({
   await ctx.close();
 });
 
+test("storage capacity adds up: A fills first, then uploads go to B", async ({ page }) => {
+  await devLogin(page);
+  const csrf = await page.evaluate(async () => ((await (await fetch("/api/me")).json()) as { csrfToken: string }).csrfToken);
+  const apiCall = (method: string, path: string, body?: unknown) =>
+    page.evaluate(
+      async ([m, p, b, t]) => {
+        const r = await fetch(p as string, { method: m as string, headers: { "Content-Type": "application/json", "X-CSRF-Token": t as string }, body: b ? JSON.stringify(b) : undefined });
+        return { status: r.status, json: await r.json().catch(() => null) };
+      },
+      [method, path, body, csrf] as const,
+    );
+
+  // Add target B through the UI (same fake R2, different bucket), then make A small.
+  const bucketB = `e2e-b-${Date.now()}`;
+  await page.goto("/admin/storage");
+  await page.getByLabel("Display name").fill(`R2 B ${Date.now()}`);
+  await page.getByLabel("Cloudflare account ID").fill("0".repeat(32));
+  await page.getByLabel("Bucket name").fill(bucketB);
+  await page.getByLabel("Credential ref").fill("LOCAL");
+  await page.getByRole("button", { name: "Add target" }).click();
+  await expect(page.getByText(`Bucket ${bucketB}`, { exact: false })).toBeVisible();
+
+  const list = (await apiCall("GET", "/api/admin/storage")).json as { targets: { id: string; bucket: string; usedBytes: number; reservedBytes: number }[] };
+  const a = list.targets[0]!;
+  const b = list.targets.find((t) => t.bucket === bucketB)!;
+  expect((await apiCall("PATCH", `/api/admin/storage/${a.id}`, { capacityBytes: a.usedBytes + a.reservedBytes + 10 })).status).toBe(200);
+
+  const before = new Map(list.targets.map((t) => [t.id, t.usedBytes]));
+  await page.goto("/");
+  await upload(page, [{ name: `fits-a-${Date.now()}.bin`, mimeType: "application/octet-stream", buffer: Buffer.from("12345678") }]);
+  await upload(page, [{ name: `goes-b-${Date.now()}.bin`, mimeType: "application/octet-stream", buffer: Buffer.from("12345678") }]);
+  const after = (await apiCall("GET", "/api/admin/storage")).json as { targets: { id: string; usedBytes: number }[] };
+  const grew = (id: string) => after.targets.find((t) => t.id === id)!.usedBytes - before.get(id)!;
+  expect(grew(a.id)).toBe(8);
+  expect(grew(b.id)).toBe(8);
+
+  await page.goto("/admin/storage");
+  // A still has 2 bytes free, so it stays first in line for tiny files; B offers the large free space.
+  const status = page.getByRole("status").filter({ hasText: "Next upload goes to" });
+  await expect(status).toContainText("Largest file that fits right now: 10.0 GB");
+  // Restore A for the other tests.
+  expect((await apiCall("PATCH", `/api/admin/storage/${a.id}`, { capacityBytes: null })).status).toBe(200);
+});
+
 test("manifest and installability basics", async ({ request }) => {
   const m = await (await request.get("/manifest.webmanifest")).json();
   expect(m).toMatchObject({ name: "FileNest", short_name: "FileNest", id: "/", start_url: "/", scope: "/", display: "standalone" });
