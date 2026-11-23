@@ -23,3 +23,11 @@ describe("PWA data hygiene", () => {
     for (const p of ["api", "auth", "s"]) expect(cfg).toContain(`/^\\/${p}\\//`);
   });
 });
+
+describe("Worker config hygiene", () => {
+  it("invocation logs (which contain share-token URLs) are off and query strings redacted", () => {
+    const cfg = readFileSync("wrangler.example.jsonc", "utf8");
+    expect(cfg).toMatch(/"invocation_logs":\s*false/);
+    expect(cfg).toMatch(/"redact_query_string":\s*true/);
+  });
+});

@@ -2,6 +2,7 @@
 //   pnpm scan:secrets
 // Exit code 1 when something suspicious is found. Matches are redacted in output.
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 const RULES = [
   ["private key", /-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----/],
@@ -16,7 +17,13 @@ const RULES = [
 ];
 // Deterministic test-only key (bytes 0..31) used by tests and the isolated E2E stack.
 const ALLOW = [/AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=/];
-const FORBIDDEN_FILES = [/^\.dev\.vars$/, /^\.env(\..*)?$/, /^wrangler\.jsonc$/, /\.sqlite3?$/, /(^|\/)dumps?\//];
+const FORBIDDEN_FILES = [
+  /(^|\/)\.dev\.vars(\.(?!example$)[^/]+)?$/,
+  /(^|\/)\.env(\.(?!example$)[^/]+)?$/,
+  /(^|\/)wrangler\.jsonc$/,
+  /\.sqlite3?$/,
+  /(^|\/)dumps?\//,
+];
 
 const git = (args) => execFileSync("git", args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
 const findings = [];
@@ -33,6 +40,8 @@ function scan(text, where) {
 }
 
 const tracked = git(["ls-files"]).split("\n").filter(Boolean);
+// Untracked files that are NOT ignored would be picked up by the next `git add -A`.
+const untracked = git(["ls-files", "--others", "--exclude-standard"]).split("\n").filter(Boolean);
 for (const f of tracked) {
   if (FORBIDDEN_FILES.some((r) => r.test(f))) findings.push(`${f}  file must not be committed`);
   if (/\.(png|jpe?g|gif|webp|ico|zip|woff2?)$/.test(f) || f === "pnpm-lock.yaml") continue;
@@ -40,6 +49,15 @@ for (const f of tracked) {
     scan(git(["show", `:${f}`]), f);
   } catch {
     /* deleted in index */
+  }
+}
+for (const f of untracked) {
+  if (FORBIDDEN_FILES.some((r) => r.test(f))) findings.push(`${f}  (untracked) file must not be committed`);
+  if (/\.(png|jpe?g|gif|webp|ico|zip|woff2?)$/.test(f)) continue;
+  try {
+    scan(readFileSync(f, "utf8"), `${f} (untracked)`);
+  } catch {
+    /* unreadable */
   }
 }
 
@@ -61,4 +79,4 @@ if (unique.length) {
   console.error("\nIf a real secret was ever committed: revoke/rotate it FIRST, then rewrite history before publishing.");
   process.exit(1);
 }
-console.log(`No secrets found in ${tracked.length} tracked files and git history.`);
+console.log(`No secrets found in ${tracked.length} tracked + ${untracked.length} untracked files and git history.`);

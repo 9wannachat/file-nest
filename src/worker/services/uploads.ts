@@ -14,6 +14,7 @@
 import { and, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { files, objectDeletions, uploadSessions, type UploadSession, type User } from "../db/schema.ts";
 import type { Db } from "../env.ts";
+import { atomicBatch } from "../db/client.ts";
 import { writableFolderId } from "../authz.ts";
 import { badRequest, HttpError, notFound } from "../lib/errors.ts";
 import { decideContentType, inlineCandidate, normalizeMime, SNIFF_BYTES } from "../lib/mime.ts";
@@ -25,7 +26,8 @@ import { bucketById, targetForNewUpload, type StorageCtx } from "./storage.ts";
 
 export const PUT_URL_TTL_S = 15 * 60;
 export const SESSION_TTL_MS = 2 * 3600_000;
-export const LEASE_MS = 60_000;
+/** Must exceed the worst-case finalize time (server-side copy of up to ~5 GiB). */
+export const LEASE_MS = 5 * 60_000;
 /** Staging may only be deleted once its presigned URL can no longer be used. */
 const stagingSafeAfter = (s: Pick<UploadSession, "createdAt">) => s.createdAt + PUT_URL_TTL_S * 1000 + 60_000;
 
@@ -92,7 +94,8 @@ export async function createUpload(
 
   const contentType = declaredMime ?? "application/octet-stream";
   const bucket = await bucketById(ctx, target.id);
-  const putUrl = await bucket.presignPut(s.stagingKey, contentType, PUT_URL_TTL_S);
+  // Content-Length is signed too, so the staging object cannot exceed the declared size.
+  const putUrl = await bucket.presignPut(s.stagingKey, contentType, PUT_URL_TTL_S, size);
   return {
     uploadId: s.id,
     putUrl,
@@ -109,16 +112,18 @@ function enqueueDelete(db: Db, storageId: string, key: string, reason: string, n
     .onConflictDoNothing();
 }
 
+/** Writes made by a finalizer are fenced on the exact lease it claimed. */
+function holdsLease(s: UploadSession) {
+  return and(eq(uploadSessions.id, s.id), eq(uploadSessions.state, "finalizing"), eq(uploadSessions.leaseUntil, s.leaseUntil ?? -1));
+}
+
 async function releaseLease(db: Db, s: UploadSession) {
-  await db
-    .update(uploadSessions)
-    .set({ state: "pending", leaseUntil: null })
-    .where(and(eq(uploadSessions.id, s.id), eq(uploadSessions.state, "finalizing")));
+  await db.update(uploadSessions).set({ state: "pending", leaseUntil: null }).where(holdsLease(s));
 }
 
 async function failSession(db: Db, s: UploadSession, code: string, now: number) {
   await db.batch([
-    db.update(uploadSessions).set({ state: "failed", errorCode: code, leaseUntil: null }).where(eq(uploadSessions.id, s.id)),
+    db.update(uploadSessions).set({ state: "failed", errorCode: code, leaseUntil: null }).where(holdsLease(s)),
     enqueueDelete(db, s.storageId, s.stagingKey, "failed_upload", Math.max(now, stagingSafeAfter(s)), now),
     enqueueDelete(db, s.storageId, s.finalKey, "failed_upload", now, now),
   ]);
@@ -170,6 +175,12 @@ export async function finalizeUpload(ctx: StorageCtx, user: User, uploadId: stri
     return await runFinalize(ctx, user, claimed, now);
   } catch (e) {
     if (e instanceof HttpError) throw e;
+    const current = await db.select().from(uploadSessions).where(eq(uploadSessions.id, claimed.id)).get();
+    if (current && (current.state !== "finalizing" || current.leaseUntil !== claimed.leaseUntil)) {
+      // We lost the lease (expired by cleanup or taken over): report state, not a storage fault.
+      if (current.state === "expired") throw new HttpError(410, "upload_expired", "Upload session expired");
+      throw new HttpError(409, "upload_state_changed", "Upload state changed; retry");
+    }
     // Unexpected/storage error: hand the session back so the client can retry.
     await releaseLease(db, claimed);
     if (e instanceof StorageError) {
@@ -230,40 +241,35 @@ async function runFinalize(ctx: StorageCtx, user: User, s: UploadSession, now: n
 
   for (let attempt = 1; attempt <= 20; attempt++) {
     const name = attempt === 1 ? s.name : withSuffix(s.name, attempt);
+    let completed = false;
     try {
-      await db.batch([
-        db
-          .insert(files)
-          .values({
-            id: s.fileId,
-            ownerId: s.ownerId,
-            folderId,
-            name,
-            size: finalHead.size,
-            mimeDeclared: s.declaredMime,
-            contentType,
-            inlineOk,
-            storageId: s.storageId,
-            objectKey: s.finalKey,
-            etag: finalHead.etag,
-            uploadSessionId: s.id,
-            trashedAt: null,
-            trashRootId: null,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .onConflictDoNothing({ target: files.uploadSessionId }),
+      // Fenced: the row is inserted and the session completed only if we still
+      // hold the exact lease we claimed (cleanup or another finalizer may have
+      // taken over or expired the session in the meantime).
+      const results = await atomicBatch(db.$client, [
+        sql`INSERT INTO files (id, owner_id, folder_id, name, size, mime_declared, content_type, inline_ok, storage_id,
+                               object_key, etag, upload_session_id, created_at, updated_at)
+            SELECT ${s.fileId}, ${s.ownerId}, ${folderId}, ${name}, ${finalHead.size}, ${s.declaredMime}, ${contentType},
+                   ${inlineOk ? 1 : 0}, ${s.storageId}, ${s.finalKey}, ${finalHead.etag}, ${s.id}, ${now}, ${now}
+            WHERE EXISTS (SELECT 1 FROM upload_sessions WHERE id = ${s.id} AND state = 'finalizing' AND lease_until = ${s.leaseUntil})
+            ON CONFLICT (upload_session_id) DO NOTHING`,
         db
           .update(uploadSessions)
           .set({ state: "completed", completedAt: now, leaseUntil: null })
-          .where(eq(uploadSessions.id, s.id)),
+          .where(holdsLease(s)),
         enqueueDelete(db, s.storageId, s.stagingKey, "staging_done", Math.max(now, stagingSafeAfter(s)), now),
       ]);
-      break;
+      completed = (results[1]?.meta.changes ?? 0) === 1;
     } catch (e) {
       if (isUniqueViolation(e) && attempt < 20) continue; // name taken in folder -> "name (2)"
       throw e;
     }
+    if (!completed) {
+      const again = await db.select().from(uploadSessions).where(eq(uploadSessions.id, s.id)).get();
+      if (again?.state === "completed") break; // another finalizer won; same file
+      throw new HttpError(409, "upload_state_changed", "Upload state changed during finalize; retry");
+    }
+    break;
   }
   return { status: "completed", file: await fileDtoFor(db, user.id, s.fileId) };
 }
@@ -295,7 +301,8 @@ export async function expireSession(db: Db, s: UploadSession, now: number) {
       .set({ state: "expired", leaseUntil: null })
       .where(and(eq(uploadSessions.id, s.id), inArray(uploadSessions.state, ["pending", "finalizing"]))),
     enqueueDelete(db, s.storageId, s.stagingKey, "expired", Math.max(now, stagingSafeAfter(s)), now),
-    // The final key is only deleted if no file row references it (re-checked by the job).
-    enqueueDelete(db, s.storageId, s.finalKey, "expired", now, now),
+    // The final key is only deleted if no file row references it (re-checked by the
+    // job), and only after any finalizer's lease could have run out.
+    enqueueDelete(db, s.storageId, s.finalKey, "expired", now + LEASE_MS + 60_000, now),
   ]);
 }

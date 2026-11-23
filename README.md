@@ -181,6 +181,7 @@ pnpm e2e
 ## Limits and known constraints (v0.1)
 
 - **Single-part uploads**: one presigned PUT per file. Default max is 512 MiB (configurable, ≈5 GiB hard limit). No resume; a failed upload restarts that file.
+- The presigned PUT signs `Content-Type` and `Content-Length`, so R2 should reject a body that differs from the declared size (to be confirmed against real R2).
 - What is checked **before** the upload URL is issued: sign-in, folder ownership, declared size ≤ max, quota (including in-flight uploads), hourly rate limit, name. What is checked **after** upload, at finalize: actual size, content type by magic bytes, and an ETag-guarded copy. A presigned PUT cannot enforce size in advance, so oversized or short uploads are rejected at finalize and cleaned up.
 - Sharing is per **file** (folders cannot be shared yet).
 - Inline preview allowlist: PNG, JPEG, GIF, WebP, AVIF, MP4/MOV, WebM, Ogg, MP3, WAV, M4A, PDF, plain text. Everything else, including HTML and SVG, downloads as an attachment.
@@ -196,6 +197,9 @@ pnpm e2e
 - Authorization is checked in the Worker on every request. Files you cannot access return 404. The Admin role does **not** grant access to other people's private files.
 - Public link tokens are 256-bit, stored as a hash (plus an AES-GCM copy so the owner can copy the link again), and checked on every request. Revoking takes effect immediately.
 - Content responses use `X-Content-Type-Options: nosniff`, `Cache-Control: no-store` and a sandboxing CSP. Share routes add `Referrer-Policy: no-referrer`.
+- Workers **invocation logs are off** in `wrangler.example.jsonc` (`observability.logs.invocation_logs: false`, `redact_query_string: true`), because request URLs contain share tokens (`/s/<token>`) and OAuth `code`/`state`. If you turn them on, anyone who can read Workers Logs in your account can collect live share links.
+- `GET /auth/login` writes a short-lived row per request (cleaned every 15 min). On a public deployment, add a Cloudflare **rate limiting rule** for `/auth/login` (e.g. 20 requests/min per IP).
+- The app CSP allows `connect-src https://*.r2.cloudflarestorage.com` so the Admin can add R2 targets in other accounts **without redeploying**. If you use fixed accounts, tighten it in `public/_headers` to `https://<account-id>.r2.cloudflarestorage.com`.
 - **Before publishing your fork**, run `pnpm scan:secrets`. It scans tracked files and the full git history. Keep `.dev.vars`, `.env*`, `wrangler.jsonc` and D1 exports out of the repo (they are git-ignored). If a secret was ever committed, **revoke/rotate it first**, then rewrite history.
 
 ## Acceptance status

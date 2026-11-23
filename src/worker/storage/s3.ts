@@ -68,13 +68,13 @@ export class R2Bucket {
   }
 
   /** Presigned PUT for a staging key. Content-Type is part of the signature. */
-  async presignPut(key: string, contentType: string, expiresSeconds: number): Promise<string> {
+  async presignPut(key: string, contentType: string, expiresSeconds: number, contentLength: number): Promise<string> {
     const u = new URL(this.url(key));
     u.searchParams.set("X-Amz-Expires", String(expiresSeconds));
     const signed = await this.aws.sign(u.toString(), {
       method: "PUT",
-      headers: { "Content-Type": contentType },
-      // allHeaders: sign Content-Type too, so the browser must send exactly it.
+      headers: { "Content-Type": contentType, "Content-Length": String(contentLength) },
+      // allHeaders: sign Content-Type and Content-Length, so the browser must send exactly them.
       aws: { signQuery: true, allHeaders: true },
     });
     return signed.url;

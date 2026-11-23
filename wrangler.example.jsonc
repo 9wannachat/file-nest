@@ -8,7 +8,13 @@
   "name": "filenest",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-11-15",
-  "observability": { "enabled": true },
+  // Invocation logs would record request URLs, i.e. /s/<share-token> paths and
+  // OAuth ?code=&state=. Keep them off; app logs (console.*) are redacted.
+  "observability": {
+    "enabled": true,
+    "redact_query_string": true,
+    "logs": { "enabled": true, "invocation_logs": false }
+  },
 
   // UI, API and share links on one origin. These paths always reach the Worker
   // before static assets / SPA fallback.

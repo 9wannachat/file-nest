@@ -37,11 +37,18 @@ export async function googleKeys() {
   return { jwks, idToken };
 }
 
-export function setup(opts: { googleFetch?: typeof fetch; googleJwks?: import("jose").JWTVerifyGetKey } = {}) {
+export function setup(
+  opts: { googleFetch?: typeof fetch; googleJwks?: import("jose").JWTVerifyGetKey; beforeS3?: (req: Request) => Promise<void> } = {},
+) {
   const clock: Clock = { t: Date.now() };
   const s3: FakeS3 = createFakeS3({ allowedOrigins: [ORIGIN], now: () => clock.t });
+  const s3Fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const req = input instanceof Request && !init ? input : new Request(input, init);
+    if (opts.beforeS3) await opts.beforeS3(req.clone());
+    return s3.fetch(req);
+  }) as typeof fetch;
   const app = createApp({
-    s3Fetch: s3.fetch,
+    s3Fetch,
     googleFetch: opts.googleFetch ?? (async () => new Response("no", { status: 500 })),
     googleJwks: opts.googleJwks,
     now: () => clock.t,

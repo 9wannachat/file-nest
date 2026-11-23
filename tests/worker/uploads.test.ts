@@ -4,6 +4,8 @@ import { files, uploadSessions } from "../../src/worker/db/schema.ts";
 import { R2Bucket } from "../../src/worker/storage/s3.ts";
 import { ACCOUNT_A, ACCOUNT_B, browserPut, db, enc, HOST_A, HOST_B, login, makeTarget, makeUser, resetDb, setup, testEnv, uploadFile, type Login } from "./helpers.ts";
 import { loadConfig } from "../../src/worker/env.ts";
+import { LEASE_MS } from "../../src/worker/services/uploads.ts";
+import { runCleanup } from "../../src/worker/services/cleanup.ts";
 
 let t: ReturnType<typeof setup>;
 let alice: Login;
@@ -31,6 +33,8 @@ describe("create upload session", () => {
     expect(u.pathname).toMatch(/^\/bucket-a\/staging\//);
     expect(Number(u.searchParams.get("X-Amz-Expires"))).toBeLessThanOrEqual(900);
     expect(u.searchParams.get("X-Amz-SignedHeaders")).toContain("content-type");
+    expect(u.searchParams.get("X-Amz-SignedHeaders")).toContain("content-length");
+    expect(body.putHeaders).not.toHaveProperty("Content-Length"); // browsers set it themselves
     const s = await db().select().from(uploadSessions).where(eq(uploadSessions.id, body.uploadId)).get();
     expect(s?.finalKey).toMatch(/^files\//);
     expect(body.putUrl).not.toContain(s!.finalKey);
@@ -136,14 +140,34 @@ describe("finalize", () => {
     const head = (await bucket.head(s.stagingKey))!;
     await bucket.copyIfMatch(s.stagingKey, s.finalKey, head.etag); // first attempt copied...
     // ...then crashed holding a lease.
-    await db().update(uploadSessions).set({ state: "finalizing", leaseUntil: t.clock.t + 60_000 }).where(eq(uploadSessions.id, s.id));
+    await db().update(uploadSessions).set({ state: "finalizing", leaseUntil: t.clock.t + LEASE_MS }).where(eq(uploadSessions.id, s.id));
     expect((await finalize(alice, s.id)).status).toBe(202); // lease still held
-    t.clock.t += 61_000;
+    t.clock.t += LEASE_MS + 1000;
     const copiesBefore = t.s3.requests.filter((r) => r.method === "PUT" && !r.presigned).length;
     const r = await finalize(alice, s.id);
     expect(r.status).toBe(200);
     expect(t.s3.requests.filter((r) => r.method === "PUT" && !r.presigned).length).toBe(copiesBefore); // no second copy
     expect((await db().select().from(files)).length).toBe(1);
+  });
+
+  it("fencing: if cleanup expires the session mid-copy, no file row is created and nothing live is deleted", async () => {
+    let fired = false;
+    t = setup({
+      beforeS3: async (req) => {
+        if (fired || req.method !== "PUT" || !req.headers.get("x-amz-copy-source")) return;
+        fired = true;
+        // Simulate a copy that outlives the lease and the session window, with cleanup running meanwhile.
+        t.clock.t += 3 * 3600_000;
+        await runCleanup({ ...t.ctx, deps: { ...t.ctx.deps, now: () => t.clock.t } });
+      },
+    });
+    const { body } = await create(alice, { name: "slow.txt", size: 4 });
+    await browserPut(t.s3, body.putUrl, body.putHeaders, "slow");
+    const r = await finalize(alice, body.uploadId);
+    expect([409, 410]).toContain(r.status);
+    expect(await db().select().from(files)).toHaveLength(0);
+    const s = (await db().select().from(uploadSessions).where(eq(uploadSessions.id, body.uploadId)).get())!;
+    expect(s.state).toBe("expired");
   });
 
   it("HTML disguised as PNG is stored as non-inline octet-stream", async () => {

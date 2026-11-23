@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { ACCOUNT_A, ACCOUNT_B, login, makeTarget, makeUser, resetDb, setup, uploadFile, db, type Login } from "./helpers.ts";
 import { auditEvents, objectDeletions, uploadSessions, files } from "../../src/worker/db/schema.ts";
 import { runCleanup } from "../../src/worker/services/cleanup.ts";
+import { LEASE_MS } from "../../src/worker/services/uploads.ts";
 import { eq } from "drizzle-orm";
 
 let t: ReturnType<typeof setup>;
@@ -93,6 +94,7 @@ describe("cleanup job", () => {
 
     t.clock.t += 3 * 3600_000;
     await runCleanup({ ...t.ctx, deps: { ...t.ctx.deps, now: () => t.clock.t } });
+    t.clock.t += LEASE_MS + 2 * 60_000; // final-key deletes wait out any finalizer lease
     await runCleanup({ ...t.ctx, deps: { ...t.ctx.deps, now: () => t.clock.t } });
 
     const s = (await db().select().from(uploadSessions).where(eq(uploadSessions.id, c.uploadId)).get())!;
