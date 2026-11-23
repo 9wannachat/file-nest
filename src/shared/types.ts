@@ -4,7 +4,7 @@ export type Role = "admin" | "member";
 export type MemberStatus = "invited" | "active" | "disabled";
 
 export interface Me {
-  user: { id: string; email: string; name: string | null; role: Role; quotaBytes: number; usedBytes: number };
+  user: { id: string; email: string; name: string | null; role: Role; quotaBytes: number; usedBytes: number; trashedBytes?: number; quotaUnlimited?: boolean };
   auth?: "session" | "token";
   mfa?: { enabled: boolean; setupRequired: boolean; required: boolean };
   csrfToken: string;
@@ -66,6 +66,7 @@ export interface Member extends MemberLite {
   role: Role;
   status: MemberStatus;
   quotaBytes: number;
+  quotaUnlimited?: boolean;
   createdAt: number;
   lastLoginAt: number | null;
 }
@@ -156,6 +157,7 @@ export interface SystemSettings {
   trashRetentionDays: number;
   publicLinksEnabled: boolean;
   publicLinksRequirePassword: boolean;
+  storageCapBytes: number | null;
 }
 
 export interface AdminMember extends Member {

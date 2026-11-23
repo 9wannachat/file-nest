@@ -44,7 +44,16 @@ function putWithProgress(url: string, headers: Record<string, string>, file: Fil
   });
 }
 
-export function UploadProvider({ children, maxBytes }: { children: ReactNode; maxBytes: number }) {
+export function UploadProvider({
+  children,
+  maxBytes,
+  remainingBytes = null,
+}: {
+  children: ReactNode;
+  maxBytes: number;
+  /** Space left in the member's quota (null = unlimited). The server re-checks. */
+  remainingBytes?: number | null;
+}) {
   const [items, setItems] = useState<UploadItem[]>([]);
   const controllers = useRef(new Map<string, AbortController>());
   const running = useRef(new Set<string>());
@@ -114,16 +123,28 @@ export function UploadProvider({ children, maxBytes }: { children: ReactNode; ma
     for (const i of next) void run(i);
   }, [items, run]);
 
-  const enqueue = useCallback((files: FileList | File[], folderId: string | null) => {
-    const list = Array.from(files).map<UploadItem>((file) => ({
-      key: crypto.randomUUID(),
-      file,
-      folderId,
-      progress: 0,
-      state: "queued",
-    }));
-    setItems((cur) => [...cur, ...list]);
-  }, []);
+  const enqueue = useCallback(
+    (files: FileList | File[], folderId: string | null) => {
+      setItems((cur) => {
+        // Bytes already promised to uploads that have not finished yet.
+        let pending = cur.filter((i) => ["queued", "uploading", "finalizing"].includes(i.state)).reduce((n, i) => n + i.file.size, 0);
+        const list = Array.from(files).map<UploadItem>((file) => {
+          const fits = remainingBytes === null || pending + file.size <= remainingBytes;
+          if (fits) pending += file.size;
+          return {
+            key: crypto.randomUUID(),
+            file,
+            folderId,
+            progress: 0,
+            state: fits ? "queued" : "error",
+            error: fits ? undefined : "Not enough storage left for this file",
+          };
+        });
+        return [...cur, ...list];
+      });
+    },
+    [remainingBytes],
+  );
 
   const retry = useCallback((key: string) => patch(key, { state: "queued", progress: 0, error: undefined, uploadId: undefined }), [patch]);
   const cancel = useCallback(

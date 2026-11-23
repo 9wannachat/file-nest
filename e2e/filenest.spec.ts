@@ -294,6 +294,45 @@ test("admin settings: changes save and apply (password sign-in switch)", async (
   await expect(page.getByText("All changes saved")).toBeVisible();
 });
 
+test("storage quota: warning, blocked upload, Empty trash frees space", async ({ page, browser }) => {
+  await devLogin(page);
+  const email = `quota-${Date.now()}@example.test`;
+  const csrf = await page.evaluate(async () => ((await (await fetch("/api/me")).json()) as { csrfToken: string }).csrfToken);
+  const adminApi = (method: string, path: string, body?: unknown) =>
+    page.evaluate(
+      async ([m, p, b, t]) => (await fetch(p as string, { method: m as string, headers: { "Content-Type": "application/json", "X-CSRF-Token": t as string }, body: b ? JSON.stringify(b) : undefined })).status,
+      [method, path, body, csrf] as const,
+    );
+  expect(await adminApi("POST", "/api/admin/members", { email })).toBe(201);
+
+  const ctx = await browser.newContext();
+  const p = await ctx.newPage();
+  await devLogin(p, email);
+  const myId = await p.evaluate(async () => ((await (await fetch("/api/me")).json()) as { user: { id: string } }).user.id);
+  expect(await adminApi("PATCH", `/api/admin/members/${myId}`, { quotaBytes: 10 })).toBe(200);
+  await p.reload();
+
+  await upload(p, [{ name: "eight.bin", mimeType: "application/octet-stream", buffer: Buffer.from("12345678") }]);
+  await p.reload();
+  await expect(p.getByText("You’ve used 80% of your storage.")).toBeVisible();
+
+  await p.locator('input[type="file"]').setInputFiles([{ name: "five.bin", mimeType: "application/octet-stream", buffer: Buffer.from("12345") }]);
+  await expect(p.getByText("Not enough storage left for this file")).toBeVisible();
+
+  // Trash still counts; Empty trash frees the space.
+  await p.getByRole("button", { name: "Actions for eight.bin" }).click();
+  await p.getByRole("menuitem", { name: "Move to trash" }).click();
+  await p.goto("/trash");
+  await p.getByRole("button", { name: "Empty trash" }).click();
+  await p.getByRole("alertdialog").getByRole("button", { name: "Empty trash" }).click();
+  await expect(p.getByText("Trash is empty")).toBeVisible();
+  await p.goto("/");
+  await expect(p.getByText(/of your storage|storage is full/)).toHaveCount(0);
+  await upload(p, [{ name: "five.bin", mimeType: "application/octet-stream", buffer: Buffer.from("12345") }]);
+  await expect(p.getByRole("listitem", { name: "File five.bin" })).toBeVisible();
+  await ctx.close();
+});
+
 test("manifest and installability basics", async ({ request }) => {
   const m = await (await request.get("/manifest.webmanifest")).json();
   expect(m).toMatchObject({ name: "FileNest", short_name: "FileNest", id: "/", start_url: "/", scope: "/", display: "standalone" });

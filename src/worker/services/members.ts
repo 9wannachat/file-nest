@@ -110,6 +110,7 @@ export function memberDto(u: User) {
     role: u.role,
     status: u.status,
     quotaBytes: u.quotaBytes,
+    quotaUnlimited: u.quotaUnlimited,
     createdAt: u.createdAt,
     lastLoginAt: u.lastLoginAt,
   };
@@ -195,7 +196,14 @@ export async function updateMember(
     // Re-enabling someone who never signed in returns them to "invited".
     next.status = patch.status === "active" && !target.googleSub ? "invited" : patch.status;
   }
-  if (patch.quotaBytes !== undefined) next.quotaBytes = parseQuota(patch.quotaBytes);
+  if (patch.quotaBytes !== undefined) {
+    // null = unlimited (the stored byte value is kept for when the flag is removed)
+    if (patch.quotaBytes === null) next.quotaUnlimited = true;
+    else {
+      next.quotaBytes = parseQuota(patch.quotaBytes);
+      next.quotaUnlimited = false;
+    }
+  }
 
   const losingAdmin =
     target.role === "admin" && target.status === "active" && (next.role === "member" || next.status === "disabled");
@@ -226,6 +234,9 @@ export async function updateMember(
       role: next.role ?? null,
       status: next.status ?? null,
       quotaBytes: next.quotaBytes ?? null,
+      ...(patch.quotaBytes !== undefined
+        ? { previousQuota: target.quotaUnlimited ? "unlimited" : target.quotaBytes, newQuota: next.quotaUnlimited ? "unlimited" : (next.quotaBytes ?? null) }
+        : {}),
     }),
   ]);
   if ((upd as unknown as { meta: { changes: number } }).meta.changes !== 1) throw conflict("last_admin", "At least one active Admin is required");

@@ -13,6 +13,7 @@ export const users = sqliteTable("users", {
   role: text("role", { enum: ["admin", "member"] }).notNull(),
   status: text("status", { enum: ["invited", "active", "disabled"] }).notNull(),
   quotaBytes: integer("quota_bytes").notNull(),
+  quotaUnlimited: integer("quota_unlimited", { mode: "boolean" }).notNull(),
   invitedBy: text("invited_by"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
@@ -201,6 +202,7 @@ export type User = typeof users.$inferSelect;
 
 /** Defaults for the password/2FA/ban columns when creating a member row. */
 export const USER_SECURITY_DEFAULTS = {
+  quotaUnlimited: false,
   passwordHash: null,
   passwordSalt: null,
   passwordUpdatedAt: null,

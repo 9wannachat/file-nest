@@ -1,10 +1,11 @@
-import { Activity, Database, Globe, LayoutDashboard, Mail, Settings2, Users } from "lucide-react";
+import { Activity, Database, Globe, HardDrive, LayoutDashboard, Mail, Settings2, Users } from "lucide-react";
 import { NavLink, Outlet } from "react-router";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { to: "/admin", label: "Overview", icon: LayoutDashboard, end: true },
   { to: "/admin/members", label: "Members", icon: Users },
+  { to: "/admin/usage", label: "Usage", icon: HardDrive },
   { to: "/admin/invitations", label: "Invitations", icon: Mail },
   { to: "/admin/links", label: "Public links", icon: Globe },
   { to: "/admin/settings", label: "Settings", icon: Settings2 },

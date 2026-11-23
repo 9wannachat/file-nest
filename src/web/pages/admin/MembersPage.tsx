@@ -122,7 +122,7 @@ export function MembersPage() {
                     </span>
                   </TableCell>
                   <TableCell className="hidden text-muted-foreground lg:table-cell">
-                    {formatBytes(m.usedBytes)} / {formatBytes(m.quotaBytes)}
+                    {formatBytes(m.usedBytes)} / {m.quotaUnlimited ? "∞" : formatBytes(m.quotaBytes)}
                   </TableCell>
                   <TableCell className="hidden text-muted-foreground lg:table-cell">{m.lastLoginAt ? formatDate(m.lastLoginAt) : "Never"}</TableCell>
                 </TableRow>

@@ -1,5 +1,10 @@
 import { Search, Share2, Trash2 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
+import { USAGE_CHANGED_EVENT } from "@/auth";
+import { ConfirmDialog } from "@/components/dialogs";
+import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api";
 import { useSearchParams } from "react-router";
 import type { DriveItem, FileItem, FolderItem } from "@shared/types";
 import { FileList } from "@/components/FileList";
@@ -32,9 +37,37 @@ export function TrashPage() {
   const items: DriveItem[] = useMemo(() => (data ? [...data.folders, ...data.files] : []), [data]);
   const { actionsFor, open, dialogs, bulkBar, selection } = useItemActions("trash", reload, items, !!data);
   const { sort, onSort } = useListView({ key: "updated", dir: "desc" });
+  const [confirmEmpty, setConfirmEmpty] = useState(false);
   return (
     <div className="pb-24">
-      <PageHeader title="Trash" description="Items in trash are deleted forever after the retention period." />
+      <PageHeader title="Trash" description="Items in trash still count toward your storage and are deleted forever after the retention period.">
+        {items.length ? (
+          <Button variant="outline" onClick={() => setConfirmEmpty(true)}>
+            <Trash2 /> Empty trash
+          </Button>
+        ) : null}
+      </PageHeader>
+      <ConfirmDialog
+        open={confirmEmpty}
+        title="Empty trash?"
+        body="Everything in your trash will be permanently deleted. This cannot be undone."
+        confirmLabel="Empty trash"
+        destructive
+        onClose={() => setConfirmEmpty(false)}
+        onConfirm={async () => {
+          let left = 1;
+          let purged = 0;
+          // The server works in batches; keep going until nothing is left.
+          for (let i = 0; i < 50 && left > 0; i++) {
+            const r = await api<{ purged: number; remaining: number }>("/api/trash/empty", { method: "POST" });
+            purged += r.purged;
+            left = r.remaining;
+          }
+          toast.success(`Deleted ${purged} item${purged === 1 ? "" : "s"} permanently`);
+          window.dispatchEvent(new Event(USAGE_CHANGED_EVENT));
+          reload();
+        }}
+      />
       {bulkBar}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {loading && !data ? <ListSkeleton /> : null}

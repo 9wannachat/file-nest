@@ -134,7 +134,7 @@ export function MemberDetailPage() {
           <div>
             <div className="text-muted-foreground">Storage</div>
             <div>
-              {formatBytes(m.usedBytes)} of {formatBytes(m.quotaBytes)} · {m.fileCount} files
+              {formatBytes(m.usedBytes)} of {m.quotaUnlimited ? "unlimited" : formatBytes(m.quotaBytes)} · {m.fileCount} files
             </div>
           </div>
           <div>
@@ -189,13 +189,20 @@ export function MemberDetailPage() {
             <div className="grid gap-2">
               <Label htmlFor="m-quota">Quota</Label>
               <Select
-                value={String(Math.round(m.quotaBytes / GB))}
-                onValueChange={(v) => void act(() => api(base, { method: "PATCH", body: { quotaBytes: Number(v) * GB } }), "Quota updated")}
+                value={m.quotaUnlimited ? "unlimited" : String(Math.round(m.quotaBytes / GB))}
+                onValueChange={(v) => {
+                  const bytes = v === "unlimited" ? null : Number(v) * GB;
+                  if (bytes !== null && bytes < m.usedBytes) {
+                    toast.warning(`${m.email} already uses ${formatBytes(m.usedBytes)}. Their files stay, but uploads are blocked until they free space.`);
+                  }
+                  void act(() => api(base, { method: "PATCH", body: { quotaBytes: bytes } }), "Quota updated");
+                }}
               >
                 <SelectTrigger id="m-quota" className="w-32">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="unlimited">Unlimited</SelectItem>
                   {[...new Set([...QUOTAS, Math.round(m.quotaBytes / GB)])]
                     .sort((a, b) => a - b)
                     .map((g) => (

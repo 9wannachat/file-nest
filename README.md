@@ -164,6 +164,15 @@ Open `APP_ORIGIN`, sign in with `BOOTSTRAP_ADMIN_EMAIL`. That account becomes Ad
 - **Trust note:** because FileNest sends no email, an Admin who resets a member's 2FA *and then* issues a reset link could set that member's password. Both steps need re-authentication, are recorded in the audit log and the member's activity, and sign the member out (so they notice). Only give the Admin role to people you trust with that.
 - Turning on the 2FA requirement applies immediately: members who must use 2FA but haven't set it up can only reach the enrollment screen, and their API tokens stop working until they enroll.
 
+## Storage limits
+
+- **Per member quota:** set in Admin Console → Members (or in bulk on **Usage**), including **Unlimited**. New members get the default quota from Settings; an invitation can set its own.
+- **What counts:** every stored file, **including the trash**, plus uploads that are in progress. Members see a meter in the sidebar, a warning at 80% and a red banner at 95%/full, and files that would not fit are rejected before uploading. **Empty trash** (Trash page) frees space immediately.
+- **Lowering a quota below current usage** keeps all files; the member just cannot upload until they are under the limit again.
+- **Total storage limit:** Admin Console → Settings → *Total storage limit* caps all members together (default: no limit) to keep R2 costs predictable. When it is reached, uploads stop for everyone with a "FileNest is out of storage" message.
+- Limits count stored files and in-progress uploads. Briefly after an upload is cancelled, R2 may still hold its staging bytes until cleanup (≈15 min), so real R2 usage can exceed the cap by at most a few uploads' worth.
+- Granting **Unlimited** and bulk quota changes need a recent sign-in, and every quota change is recorded in the audit log with the previous and new value. Repeated uploads that are rejected for space are throttled.
+
 ## AI assistants (MCP)
 
 `packages/mcp` is a **local** MCP server (stdio). It runs on your computer, talks to FileNest with a personal access token, and reads/writes only inside one working folder.
@@ -283,6 +292,7 @@ pnpm e2e
 | API tokens + MCP: list, inline image, download, path-escape refusal, upload | ✅ local (stdio MCP → Worker → local D1 → fake R2) · 🟡 real Claude Desktop/Code client |
 | Password links: locked page, unlock in a real browser, cookie invalidation, lockout | ✅ local + E2E · 🟡 PBKDF2 CPU time on real Workers |
 | Password sign-up via invitation, TOTP 2FA (enroll, sign in, recovery codes, replay protection), admin ban/reset/settings | ✅ local + E2E · 🟡 real authenticator apps on phones, PBKDF2 limits/CPU on deployed Workers |
+| Storage limits: member quota/unlimited, trash counted, Empty trash, system cap, warnings, pre-check, usage page | ✅ local + E2E |
 | Fresh install from this README with one R2 account | 🟡 not yet run against real Cloudflare |
 
 ## License

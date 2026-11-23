@@ -16,6 +16,7 @@ import { MembersPage } from "@/pages/admin/MembersPage";
 import { OverviewPage } from "@/pages/admin/OverviewPage";
 import { PublicLinksPage } from "@/pages/admin/PublicLinksPage";
 import { StoragePage } from "@/pages/admin/StoragePage";
+import { UsagePage } from "@/pages/admin/UsagePage";
 import { InvitePage, LoginPage, MfaPage, NotAuthorizedPage, ResetPasswordPage } from "@/pages/AuthPages";
 import { MfaEnrollmentScreen } from "@/pages/MfaEnrollmentScreen";
 import { ReauthProvider } from "@/components/reauth";
@@ -23,6 +24,7 @@ import { DrivePage } from "@/pages/DrivePage";
 import { SearchPage, SharedPage, TrashPage } from "@/pages/ListPages";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { UploadProvider } from "@/upload/UploadProvider";
+import { quotaState } from "@/components/quota";
 
 function Protected() {
   const { state, refresh } = useAuth();
@@ -56,7 +58,7 @@ function Protected() {
   const me = state.me;
   if (me.mfa?.setupRequired) return <MfaEnrollmentScreen />;
   return (
-    <UploadProvider maxBytes={me.limits.maxUploadBytes}>
+    <UploadProvider maxBytes={me.limits.maxUploadBytes} remainingBytes={quotaState(me.user).remaining}>
       <AppShell>
         <Routes>
           <Route index element={<DrivePage />} />
@@ -70,6 +72,7 @@ function Protected() {
               <Route index element={<OverviewPage />} />
               <Route path="members" element={<MembersPage />} />
               <Route path="members/:id" element={<MemberDetailPage />} />
+              <Route path="usage" element={<UsagePage />} />
               <Route path="invitations" element={<InvitationsPage />} />
               <Route path="links" element={<PublicLinksPage />} />
               <Route path="settings" element={<AdminSettingsPage />} />

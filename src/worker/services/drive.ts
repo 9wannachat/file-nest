@@ -349,6 +349,23 @@ export async function purgeTrashRoots(db: Db, roots: string[], now: number) {
   }
 }
 
+export async function emptyTrash(db: Db, userId: string, now: number, limit = 20) {
+  const roots = await db.all<{ id: string }>(sql`
+    SELECT id FROM folders WHERE owner_id = ${userId} AND trash_root_id = id
+    UNION ALL
+    SELECT id FROM files WHERE owner_id = ${userId} AND trash_root_id = id
+    LIMIT ${limit}`);
+  await purgeTrashRoots(
+    db,
+    roots.map((r) => r.id),
+    now,
+  );
+  const left = await db.get<{ n: number }>(sql`
+    SELECT (SELECT count(*) FROM folders WHERE owner_id = ${userId} AND trash_root_id = id)
+         + (SELECT count(*) FROM files WHERE owner_id = ${userId} AND trash_root_id = id) AS n`);
+  return { purged: roots.length, remaining: left?.n ?? 0 };
+}
+
 export function requireString(v: unknown, code = "invalid_input"): string {
   if (typeof v !== "string" || !v) throw new HttpError(400, code, code);
   return v;

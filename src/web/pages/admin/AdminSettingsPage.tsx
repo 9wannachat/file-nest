@@ -118,6 +118,23 @@ export function AdminSettingsPage() {
               onChange={(v) => set("defaultQuotaBytes", v)}
             />
           </Row>
+          <Row id="s-cap" label="Total storage limit" hint="Across all members. Uploads stop for everyone when it is reached. R2 itself has no fixed size.">
+            <Select value={s.storageCapBytes === null ? "none" : String(s.storageCapBytes)} onValueChange={(v) => set("storageCapBytes", v === "none" ? null : Number(v))}>
+              <SelectTrigger id="s-cap" className="w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No limit</SelectItem>
+                {[...new Set([100, 250, 500, 1024, 2048, 5120, 10240].map((g) => g * GB).concat(s.storageCapBytes ?? []))]
+                  .sort((a, b) => a - b)
+                  .map((v) => (
+                    <SelectItem key={v} value={String(v)}>
+                      {formatBytes(v)}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </Row>
           <Row id="s-max" label="Maximum file size" hint={`Up to ${formatBytes(cap)} (set at deploy time).`}>
             <Choice id="s-max" value={s.maxUploadBytes} options={uploadOptions.map((v) => [v, formatBytes(v)] as [number, string])} onChange={(v) => set("maxUploadBytes", v)} />
           </Row>

@@ -44,6 +44,7 @@ import { UPLOADED_EVENT, useUploads } from "@/upload/UploadProvider";
 import { CommandPalette, OPEN_PALETTE_EVENT } from "./CommandPalette";
 import { Logo } from "./Logo";
 import { ThemeRadioItems } from "./ThemeToggle";
+import { QuotaBanner, QuotaBar } from "./quota";
 
 export function OfflineBanner() {
   const online = useOnline();
@@ -109,19 +110,7 @@ function InstallItem() {
 
 function StorageMeter() {
   const me = useMe();
-  const { usedBytes, quotaBytes } = me.user;
-  const pct = quotaBytes > 0 ? Math.min(100, (usedBytes / quotaBytes) * 100) : 0;
-  return (
-    <div className="grid gap-1.5 px-2 py-1 group-data-[collapsible=icon]:hidden">
-      <div className="flex items-center gap-2 text-xs text-sidebar-foreground/80">
-        <HardDrive className="size-3.5" aria-hidden /> Storage
-      </div>
-      <Progress value={pct} aria-label="Storage used" className={pct > 90 ? "[&>div]:bg-destructive" : undefined} />
-      <p className="text-xs text-sidebar-foreground/70">
-        {formatBytes(usedBytes)} of {formatBytes(quotaBytes)} used
-      </p>
-    </div>
-  );
+  return <QuotaBar user={me.user} className="px-2 py-1 text-sidebar-foreground group-data-[collapsible=icon]:hidden" />;
 }
 
 function NavItem({ to, icon, label, end }: { to: string; icon: ReactNode; label: string; end?: boolean }) {
@@ -244,6 +233,10 @@ function AppSidebar() {
   );
 }
 
+function QuotaBannerForMe() {
+  return <QuotaBanner user={useMe().user} />;
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const { refreshSilently } = useAuth();
   // Keep the storage meter current after uploads/purges: debounced, and a failure
@@ -275,6 +268,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <SidebarInset className="min-h-0 overflow-hidden">
         <OfflineBanner />
         <PwaBar />
+        <QuotaBannerForMe />
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3 sm:px-4">
           <SidebarTrigger aria-label="Toggle navigation" />
           <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-5" />

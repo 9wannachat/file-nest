@@ -24,6 +24,7 @@ import { StorageError } from "../storage/s3.ts";
 import { fileDtoFor, isUniqueViolation } from "./drive.ts";
 import { bucketById, targetForNewUpload, type StorageCtx } from "./storage.ts";
 import { getSettings } from "./settings.ts";
+import { reserveAttempt, tooMany } from "./authn.ts";
 
 export const PUT_URL_TTL_S = 15 * 60;
 export const SESSION_TTL_MS = 2 * 3600_000;
@@ -42,7 +43,8 @@ export async function createUpload(
   const name = cleanName(input.name);
   const size = typeof input.size === "number" ? input.size : NaN;
   if (!Number.isSafeInteger(size) || size < 0) throw badRequest("invalid_size", "Invalid file size");
-  const maxUploadBytes = (await getSettings(db, config)).maxUploadBytes;
+  const settings = await getSettings(db, config);
+  const maxUploadBytes = settings.maxUploadBytes;
   if (size > maxUploadBytes) {
     throw new HttpError(413, "file_too_large", `File exceeds the ${maxUploadBytes} byte limit`, { maxBytes: maxUploadBytes });
   }
@@ -58,6 +60,11 @@ export async function createUpload(
     throw new HttpError(429, "rate_limited", "Too many uploads in the last hour. Try again later.");
   }
 
+  const throttled = await db.$client
+    .prepare("SELECT locked_until FROM auth_attempts WHERE scope = 'upload-rejected' AND key = ?1 AND locked_until > ?2")
+    .bind(user.id, now)
+    .first<{ locked_until: number }>();
+  if (throttled) throw tooMany({ retryAfterMs: throttled.locked_until - now });
   const target = await targetForNewUpload(db);
   const id = crypto.randomUUID();
   const fileId = crypto.randomUUID();
@@ -80,17 +87,42 @@ export async function createUpload(
     completedAt: null,
   };
 
-  // Quota check and reservation in ONE statement so concurrent creates cannot overshoot.
+  // Member quota (files incl. trash + in-flight uploads) and the system-wide cap are
+  // checked and reserved in ONE statement, so concurrent creates cannot overshoot.
+  const cap = settings.storageCapBytes;
   const res = await db.run(sql`
     INSERT INTO upload_sessions (id, owner_id, folder_id, file_id, name, declared_size, declared_mime, storage_id,
                                  staging_key, final_key, state, created_at, expires_at)
     SELECT ${s.id}, ${s.ownerId}, ${s.folderId}, ${s.fileId}, ${s.name}, ${s.declaredSize}, ${s.declaredMime},
            ${s.storageId}, ${s.stagingKey}, ${s.finalKey}, 'pending', ${s.createdAt}, ${s.expiresAt}
-    WHERE (SELECT coalesce(sum(size), 0) FROM files WHERE owner_id = ${user.id})
-        + (SELECT coalesce(sum(declared_size), 0) FROM upload_sessions
-           WHERE owner_id = ${user.id} AND state IN ('pending', 'finalizing'))
-        + ${size} <= (SELECT quota_bytes FROM users WHERE id = ${user.id})`);
-  if (res.meta.changes !== 1) throw new HttpError(413, "quota_exceeded", "Storage quota exceeded");
+    WHERE (
+        (SELECT quota_unlimited FROM users WHERE id = ${user.id}) = 1
+        OR (SELECT coalesce(sum(size), 0) FROM files WHERE owner_id = ${user.id})
+         + (SELECT coalesce(sum(declared_size), 0) FROM upload_sessions
+            WHERE owner_id = ${user.id} AND (state = 'finalizing' OR (state = 'pending' AND expires_at >= ${now})))
+         + ${size} <= (SELECT quota_bytes FROM users WHERE id = ${user.id})
+      )
+      AND (
+        ${cap} IS NULL
+        OR (SELECT coalesce(sum(size), 0) FROM files)
+         + (SELECT coalesce(sum(declared_size), 0) FROM upload_sessions
+            WHERE state = 'finalizing' OR (state = 'pending' AND expires_at >= ${now}))
+         + ${size} <= ${cap}
+      )`);
+  if (res.meta.changes !== 1) {
+    // Rejected creates also spend a budget, so nobody can probe free space or force
+    // repeated full-table sums for free.
+    const budget = await reserveAttempt(db, "upload-rejected", user.id, now, 20);
+    if (!budget.ok) throw tooMany(budget);
+    // Tell the member which limit was hit (both are about storage, neither leaks data).
+    const mine = await db.run(sql`SELECT 1 FROM users WHERE id = ${user.id} AND (quota_unlimited = 1 OR
+        (SELECT coalesce(sum(size), 0) FROM files WHERE owner_id = ${user.id})
+      + (SELECT coalesce(sum(declared_size), 0) FROM upload_sessions
+         WHERE owner_id = ${user.id} AND (state = 'finalizing' OR (state = 'pending' AND expires_at >= ${now})))
+      + ${size} <= quota_bytes)`);
+    if (mine.results?.length) throw new HttpError(507, "system_storage_full", "FileNest is out of storage. Ask an Admin to free space or raise the limit.");
+    throw new HttpError(413, "quota_exceeded", "Storage quota exceeded");
+  }
 
   const contentType = declaredMime ?? "application/octet-stream";
   const bucket = await bucketById(ctx, target.id);

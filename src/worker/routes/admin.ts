@@ -12,6 +12,7 @@ import { badRequest, conflict, HttpError, notFound } from "../lib/errors.ts";
 import { escapeLike } from "../lib/names.ts";
 import { appOrigin, authOf, requireAdmin, requireRecentAuth } from "../auth/middleware.ts";
 import { revokeUserSessions } from "../auth/session.ts";
+import { atomicBatch } from "../db/client.ts";
 import { auditInsert } from "../services/audit.ts";
 import { createPasswordReset, disableTotp } from "../services/authn.ts";
 import { createInvitation, listInvitations, revokeInvitation } from "../services/invitations.ts";
@@ -72,6 +73,11 @@ admin.get("/overview", async (c) => {
     })
     .from(storageTargets);
   const recentEvents = await db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(10);
+  const settings = await getSettings(db, c.get("config"));
+  const near = await db.get<{ n: number; over: number }>(sql`
+    SELECT sum(CASE WHEN used >= quota * 0.8 THEN 1 ELSE 0 END) AS n, sum(CASE WHEN used > quota THEN 1 ELSE 0 END) AS over
+    FROM (SELECT u.quota_bytes AS quota, (SELECT coalesce(sum(f.size), 0) FROM files f WHERE f.owner_id = u.id) AS used
+          FROM users u WHERE u.quota_unlimited = 0 AND u.quota_bytes > 0)`);
   return c.json({
     users: u,
     files: f,
@@ -80,6 +86,7 @@ admin.get("/overview", async (c) => {
     signedInUsers: ss.n,
     storage: perStorage,
     recentEvents,
+    capacity: { capBytes: settings.storageCapBytes, membersNearQuota: Number(near?.n ?? 0), membersOverQuota: Number(near?.over ?? 0) },
   });
 });
 
@@ -177,7 +184,8 @@ admin.get("/members/:id", async (c) => {
 
 admin.patch("/members/:id", async (c) => {
   const b = await jsonBody(c);
-  if (b.role !== undefined || b.status !== undefined) recent(c);
+  // Role/status changes and granting unlimited storage need a recent sign-in.
+  if (b.role !== undefined || b.status !== undefined || b.quotaBytes === null) recent(c);
   return c.json(await members.updateMember(c.get("db"), authOf(c).user, idParam(c), b, now(c)));
 });
 
@@ -276,6 +284,70 @@ admin.post("/members/:id/password-reset", async (c) => {
   if (!u.passwordHash) throw new HttpError(409, "no_password", "This member signs in with Google; there is no password to reset");
   if (u.totpEnabledAt) throw new HttpError(409, "mfa_enabled", "This member uses 2FA; they can still sign in with their authenticator and change it themselves");
   return c.json(await createPasswordReset(c.get("db"), u, authOf(c).user.id, appOrigin(c), now(c)), 201);
+});
+
+// ---------- storage usage ----------
+
+admin.get("/usage", async (c) => {
+  const filter = c.req.query("filter");
+  const rows = await c.get("db").all<{
+    id: string;
+    email: string;
+    name: string | null;
+    status: string;
+    quotaBytes: number;
+    quotaUnlimited: number;
+    usedBytes: number;
+    trashedBytes: number;
+    fileCount: number;
+  }>(sql`
+    SELECT u.id, u.email, u.name, u.status, u.quota_bytes AS quotaBytes, u.quota_unlimited AS quotaUnlimited,
+      coalesce(sum(f.size), 0) AS usedBytes,
+      coalesce(sum(CASE WHEN f.trashed_at IS NOT NULL THEN f.size ELSE 0 END), 0) AS trashedBytes,
+      count(f.id) AS fileCount
+    FROM users u LEFT JOIN files f ON f.owner_id = u.id
+    GROUP BY u.id
+    ORDER BY usedBytes DESC
+    LIMIT 1000`);
+  const list = rows
+    .map((r) => {
+      const unlimited = r.quotaUnlimited === 1;
+      const pct = unlimited || r.quotaBytes <= 0 ? null : Math.round((r.usedBytes / r.quotaBytes) * 1000) / 10;
+      return { ...r, quotaUnlimited: unlimited, percent: pct };
+    })
+    .filter((r) => (filter === "near" ? (r.percent ?? 0) >= 80 : filter === "over" ? (r.percent ?? 0) > 100 : true));
+  const settings = await getSettings(c.get("db"), c.get("config"));
+  const total = await c.get("db").get<{ n: number }>(sql`SELECT coalesce(sum(size), 0) AS n FROM files`);
+  return c.json({ members: list, totalBytes: total?.n ?? 0, capBytes: settings.storageCapBytes });
+});
+
+/** Set the same quota (bytes, or null = unlimited) for up to 100 members, atomically. */
+admin.post("/members/bulk-quota", async (c) => {
+  recent(c);
+  const b = await jsonBody(c);
+  const ids = b.userIds;
+  if (!Array.isArray(ids) || !ids.length || ids.length > 100 || !ids.every((x) => typeof x === "string" && /^[0-9a-f-]{36}$/.test(x))) {
+    throw badRequest("invalid_members", "Select 1–100 members");
+  }
+  if (!("quotaBytes" in b) || !(b.quotaBytes === null || (typeof b.quotaBytes === "number" && Number.isSafeInteger(b.quotaBytes) && b.quotaBytes >= 0))) {
+    throw badRequest("invalid_quota", "quotaBytes must be a non-negative integer or null (unlimited)");
+  }
+  const actor = authOf(c).user;
+  const t = now(c);
+  const idsJson = JSON.stringify([...new Set(ids as string[])]);
+  const unlimited = b.quotaBytes === null ? 1 : 0;
+  const bytes = b.quotaBytes === null ? null : (b.quotaBytes as number);
+  const meta = JSON.stringify({ bulk: true, newQuota: unlimited ? "unlimited" : bytes });
+  // One atomic batch; ids travel as ONE JSON parameter (no 100-parameter limit, fixed D1 call count).
+  const [, upd] = await atomicBatch(c.get("db").$client, [
+    sql`INSERT INTO audit_events (id, actor_user_id, action, resource_type, resource_id, metadata, created_at)
+        SELECT lower(hex(randomblob(16))), ${actor.id}, 'member.update', 'user', u.id,
+               json_set(${meta}, '$.previousQuota', CASE WHEN u.quota_unlimited = 1 THEN 'unlimited' ELSE u.quota_bytes END), ${t}
+        FROM users u WHERE u.id IN (SELECT value FROM json_each(${idsJson}))`,
+    sql`UPDATE users SET quota_unlimited = ${unlimited}, quota_bytes = coalesce(${bytes}, quota_bytes), updated_at = ${t}
+        WHERE id IN (SELECT value FROM json_each(${idsJson}))`,
+  ]);
+  return c.json({ updated: upd?.meta.changes ?? 0 });
 });
 
 // ---------- invitations ----------

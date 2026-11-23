@@ -17,6 +17,7 @@ interface Overview {
   signedInUsers: number;
   storage: { id: string; name: string; lastCheckOk: boolean | null; count: number; bytes: number }[];
   recentEvents: AuditEvent[];
+  capacity: { capBytes: number | null; membersNearQuota: number; membersOverQuota: number };
 }
 
 function Stat({ icon, label, value, hint, to }: { icon: ReactNode; label: string; value: ReactNode; hint?: ReactNode; to?: string }) {
@@ -56,7 +57,13 @@ export function OverviewPage() {
           hint={`${n(data.users.active)} active · ${n(data.users.invited)} invited · ${n(data.users.disabled)} disabled`}
           to="/admin/members"
         />
-        <Stat icon={<FileStack />} label="Files" value={n(data.files.count)} hint={`${formatBytes(n(data.files.bytes))} · ${n(data.files.trashed)} in trash`} />
+        <Stat
+          icon={<FileStack />}
+          label="Storage used"
+          value={formatBytes(n(data.files.bytes))}
+          hint={`${data.capacity.capBytes ? `of ${formatBytes(data.capacity.capBytes)} limit · ` : ""}${n(data.files.count)} files · ${data.capacity.membersNearQuota} member(s) ≥80% of quota`}
+          to="/admin/usage"
+        />
         <Stat icon={<Upload />} label="Uploads (24 h)" value={n(data.uploads24h.n)} hint={formatBytes(n(data.uploads24h.bytes))} />
         <Stat icon={<Globe />} label="Public links" value={data.publicLinks} hint="Active links" to="/admin/links" />
       </div>

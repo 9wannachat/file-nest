@@ -42,12 +42,15 @@ api.get("/me", async (c) => {
   const settings = await getSettings(c.get("db"), c.get("config"));
   const used = await c
     .get("db")
-    .select({ n: sql<number>`coalesce(sum(${files.size}), 0)` })
+    .select({
+      n: sql<number>`coalesce(sum(${files.size}), 0)`,
+      trashed: sql<number>`coalesce(sum(CASE WHEN ${files.trashedAt} IS NOT NULL THEN ${files.size} ELSE 0 END), 0)`,
+    })
     .from(files)
     .where(eq(files.ownerId, user.id))
     .get();
   return c.json({
-    user: { id: user.id, email: user.email, name: user.name, role: user.role, quotaBytes: user.quotaBytes, usedBytes: used?.n ?? 0 },
+    user: { id: user.id, email: user.email, name: user.name, role: user.role, quotaBytes: user.quotaBytes, usedBytes: used?.n ?? 0, trashedBytes: used?.trashed ?? 0, quotaUnlimited: user.quotaUnlimited },
     csrfToken: session?.csrfToken ?? null,
     auth: session ? "session" : "token",
     mfa: { enabled: !!user.totpEnabledAt, setupRequired: !!c.get("mfaSetupRequired"), required: mfaRequired(settings, user.role) },
@@ -82,6 +85,8 @@ api.delete("/folders/:id", async (c) => {
 // ---- listings ----
 api.get("/shared", async (c) => c.json({ files: await drive.listShared(c.get("db"), authOf(c).user.id) }));
 api.get("/trash", async (c) => c.json(await drive.listTrash(c.get("db"), authOf(c).user.id)));
+/** Permanently delete everything in the caller's trash (frees quota). Batched; returns what is left. */
+api.post("/trash/empty", async (c) => c.json(await drive.emptyTrash(c.get("db"), authOf(c).user.id, now(c))));
 api.get("/search", async (c) => c.json(await drive.search(c.get("db"), authOf(c).user.id, c.req.query("q") ?? "")));
 
 // ---- files ----
