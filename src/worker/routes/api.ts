@@ -10,8 +10,8 @@ import * as members from "../services/members.ts";
 import * as shares from "../services/shares.ts";
 import * as storage from "../services/storage.ts";
 import { abortUpload, createUpload, finalizeUpload } from "../services/uploads.ts";
-import { auditEvents } from "../db/schema.ts";
-import { desc, lt } from "drizzle-orm";
+import { auditEvents, files } from "../db/schema.ts";
+import { desc, eq, lt, sql } from "drizzle-orm";
 import { idParam, jsonBody, now, storageCtx } from "./util.ts";
 
 export const api = new Hono<AppEnv>();
@@ -34,10 +34,16 @@ api.use("*", requireSameOrigin);
 api.use("*", requireUser);
 
 // ---- session ----
-api.get("/me", (c) => {
+api.get("/me", async (c) => {
   const { user, session } = authOf(c);
+  const used = await c
+    .get("db")
+    .select({ n: sql<number>`coalesce(sum(${files.size}), 0)` })
+    .from(files)
+    .where(eq(files.ownerId, user.id))
+    .get();
   return c.json({
-    user: { id: user.id, email: user.email, name: user.name, role: user.role, quotaBytes: user.quotaBytes },
+    user: { id: user.id, email: user.email, name: user.name, role: user.role, quotaBytes: user.quotaBytes, usedBytes: used?.n ?? 0 },
     csrfToken: session?.csrfToken ?? null,
     auth: session ? "session" : "token",
     limits: { maxUploadBytes: c.get("config").maxUploadBytes },

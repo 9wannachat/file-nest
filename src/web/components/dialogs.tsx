@@ -1,14 +1,30 @@
-import { ChevronRight, Copy, Download, Eye, EyeOff, Folder, Globe, Home, KeyRound, Link2Off, Lock, UserPlus, X } from "lucide-react";
+import { ChevronRight, Copy, Download, Eye, EyeOff, Folder, Globe, Home, KeyRound, Lock, UserPlus, X } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import type { FileItem, FolderListing, MemberLite, Sharing } from "@shared/types";
+import { ErrorState, Spinner } from "@/components/states";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { api, errorMessage } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
-import { cn, formatBytes } from "@/lib/utils";
-import { Button } from "./ui/button";
-import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader } from "./ui/dialog";
-import { Input, Label } from "./ui/input";
-import { Badge, ErrorState, Spinner } from "./ui/misc";
+import { formatBytes } from "@/lib/utils";
 
 export function NameDialog({
   open,
@@ -51,6 +67,7 @@ export function NameDialog({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
+        className="sm:max-w-md"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           const el = (e.currentTarget as HTMLElement).querySelector("input");
@@ -59,23 +76,33 @@ export function NameDialog({
           el?.setSelectionRange(0, dot > 0 ? dot : initial.length);
         }}
       >
-        <form onSubmit={submit}>
-          <DialogHeader title={title} />
-          <DialogBody className="space-y-2">
+        <form onSubmit={submit} className="grid gap-4">
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription className="sr-only">{title}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
             <Label htmlFor="name-input">Name</Label>
-            <Input id="name-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={255} aria-invalid={!!error} aria-describedby={error ? "name-error" : undefined} />
+            <Input
+              id="name-input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={255}
+              aria-invalid={!!error}
+              aria-describedby={error ? "name-error" : undefined}
+            />
             {error ? (
-              <p id="name-error" role="alert" className="text-sm text-red-600">
+              <p id="name-error" role="alert" className="text-sm text-destructive">
                 {error}
               </p>
             ) : null}
-          </DialogBody>
+          </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
             <Button type="submit" disabled={busy}>
-              {busy ? <Spinner className="text-white" /> : null}
+              {busy ? <Spinner className="text-primary-foreground" /> : null}
               {submitLabel}
             </Button>
           </DialogFooter>
@@ -104,36 +131,35 @@ export function ConfirmDialog({
 }) {
   const [busy, setBusy] = useState(false);
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader title={title} />
-        <DialogBody>
-          <p className="text-sm text-slate-600 dark:text-slate-300">{body}</p>
-        </DialogBody>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            variant={destructive ? "destructive" : "default"}
+    <AlertDialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{body}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className={destructive ? buttonVariants({ variant: "destructive" }) : undefined}
             disabled={busy}
-            onClick={async () => {
+            onClick={async (e) => {
+              e.preventDefault();
               setBusy(true);
               try {
                 await onConfirm();
                 onClose();
-              } catch (e) {
-                toast.error(errorMessage(e));
+              } catch (err) {
+                toast.error(errorMessage(err));
               } finally {
                 setBusy(false);
               }
             }}
           >
             {confirmLabel}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -141,13 +167,13 @@ export function ConfirmDialog({
 export function MoveDialog({
   open,
   itemName,
-  excludeFolderId,
+  excludeFolderIds = [],
   onClose,
   onMove,
 }: {
   open: boolean;
   itemName: string;
-  excludeFolderId?: string;
+  excludeFolderIds?: string[];
   onClose: () => void;
   onMove: (folderId: string | null) => Promise<void>;
 }) {
@@ -157,45 +183,44 @@ export function MoveDialog({
   useEffect(() => {
     if (open) setAt(null);
   }, [open]);
+  const folders = data?.folders.filter((f) => !excludeFolderIds.includes(f.id)) ?? [];
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader title={`Move “${itemName}”`} description="Choose a destination folder" />
-        <nav aria-label="Destination path" className="flex flex-wrap items-center gap-1 border-b border-slate-200 px-5 py-2 text-sm dark:border-slate-800">
-          <button className="inline-flex min-h-9 items-center gap-1 rounded px-1 hover:underline" onClick={() => setAt(null)}>
-            <Home className="size-4" /> My Drive
-          </button>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Move “{itemName}”</DialogTitle>
+          <DialogDescription>Choose a destination folder</DialogDescription>
+        </DialogHeader>
+        <nav aria-label="Destination path" className="flex flex-wrap items-center gap-1 text-sm">
+          <Button variant="ghost" size="sm" onClick={() => setAt(null)}>
+            <Home /> My Drive
+          </Button>
           {data?.breadcrumb.map((b) => (
             <span key={b.id} className="inline-flex items-center gap-1">
-              <ChevronRight className="size-4 text-slate-400" aria-hidden />
-              <button className="min-h-9 rounded px-1 hover:underline" onClick={() => setAt(b.id)}>
+              <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
+              <Button variant="ghost" size="sm" onClick={() => setAt(b.id)}>
                 {b.name}
-              </button>
+              </Button>
             </span>
           ))}
         </nav>
-        <DialogBody className="min-h-48 p-2">
-          {loading ? <Spinner className="m-4" /> : null}
-          {error ? <ErrorState message={error} onRetry={reload} /> : null}
-          {data && !data.folders.filter((f) => f.id !== excludeFolderId).length ? (
-            <p className="p-4 text-sm text-slate-500">No subfolders here.</p>
-          ) : null}
-          <ul>
-            {data?.folders
-              .filter((f) => f.id !== excludeFolderId)
-              .map((f) => (
-                <li key={f.id}>
-                  <button
-                    className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
-                    onClick={() => setAt(f.id)}
-                  >
-                    <Folder className="size-5 fill-brand-100 text-brand-700" /> <span className="flex-1 truncate">{f.name}</span>
-                    <ChevronRight className="size-4 text-slate-400" />
-                  </button>
-                </li>
-              ))}
-          </ul>
-        </DialogBody>
+        <ScrollArea className="h-64 rounded-md border">
+          <div className="p-1">
+            {loading ? <Spinner className="m-4" /> : null}
+            {error ? <ErrorState message={error} onRetry={reload} /> : null}
+            {data && !folders.length ? <p className="p-4 text-sm text-muted-foreground">No subfolders here.</p> : null}
+            {folders.map((f) => (
+              <button
+                key={f.id}
+                className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm hover:bg-accent"
+                onClick={() => setAt(f.id)}
+              >
+                <Folder className="size-5 fill-primary/15 text-primary" /> <span className="flex-1 truncate">{f.name}</span>
+                <ChevronRight className="size-4 text-muted-foreground" />
+              </button>
+            ))}
+          </div>
+        </ScrollArea>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
@@ -216,185 +241,6 @@ export function MoveDialog({
           >
             Move here
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-export function ShareDialog({ file, onClose, onChanged }: { file: FileItem | null; onClose: () => void; onChanged: () => void }) {
-  const open = !!file;
-  const { data, error, loading, reload, setData } = useApi<Sharing>(file ? `/api/files/${file.id}/sharing` : null);
-  const [q, setQ] = useState("");
-  const [results, setResults] = useState<MemberLite[]>([]);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    const ctrl = new AbortController();
-    const t = setTimeout(() => {
-      api<{ members: MemberLite[] }>(`/api/members?q=${encodeURIComponent(q)}`, { signal: ctrl.signal })
-        .then((r) => setResults(r.members))
-        .catch(() => {});
-    }, 200);
-    return () => {
-      clearTimeout(t);
-      ctrl.abort();
-    };
-  }, [q, open]);
-
-  const mutate = async (fn: () => Promise<Sharing>) => {
-    setBusy(true);
-    try {
-      setData(await fn());
-      onChanged();
-    } catch (e) {
-      toast.error(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const setMembers = (ids: string[]) =>
-    mutate(() => api<Sharing>(`/api/files/${file!.id}/sharing/members`, { method: "PUT", body: { userIds: ids } }));
-  const memberIds = data?.members.map((m) => m.id) ?? [];
-  const candidates = results.filter((r) => !memberIds.includes(r.id));
-
-  const copy = async (url: string) => {
-    try {
-      await navigator.clipboard.writeText(url);
-      toast.success("Link copied");
-    } catch {
-      toast.error("Could not copy. Select the link and copy it manually.");
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader title={`Share “${file?.name ?? ""}”`} />
-        <DialogBody className="space-y-5">
-          {loading && !data ? <Spinner /> : null}
-          {error ? <ErrorState message={error} onRetry={reload} /> : null}
-          {data ? (
-            <>
-              <section aria-labelledby="general-access" className="space-y-2">
-                <h3 id="general-access" className="text-sm font-semibold">
-                  General access
-                </h3>
-                <div
-                  className={cn(
-                    "flex items-start gap-3 rounded-xl border p-3",
-                    data.visibility === "public"
-                      ? "border-brand-500 bg-brand-50 dark:bg-brand-800/20"
-                      : "border-slate-200 dark:border-slate-800",
-                  )}
-                >
-                  {data.visibility === "public" ? (
-                    <Globe className="mt-0.5 size-5 text-brand-700" aria-hidden />
-                  ) : (
-                    <Lock className="mt-0.5 size-5 text-slate-500" aria-hidden />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      {data.visibility === "public" ? "Anyone with the link" : "Only people with access"}
-                      <Badge tone={data.visibility === "public" ? "brand" : "slate"}>{data.visibility === "public" ? "Public" : "Private"}</Badge>
-                    </div>
-                    <p className="text-xs text-slate-500">
-                      {data.visibility === "public"
-                        ? "Anyone with the link can view and download without signing in."
-                        : "Only you and the members below can open this file."}
-                    </p>
-                    {data.publicLink ? (
-                      <div className="mt-2 flex gap-2">
-                        <Input readOnly value={data.publicLink.url} aria-label="Public link" onFocus={(e) => e.currentTarget.select()} className="text-xs" />
-                        <Button size="icon" variant="outline" aria-label="Copy link" onClick={() => void copy(data.publicLink!.url)}>
-                          <Copy />
-                        </Button>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-                {data.visibility === "public" ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => void mutate(() => api<Sharing>(`/api/files/${file!.id}/sharing/link`, { method: "DELETE" }))}
-                  >
-                    <Link2Off /> Revoke link
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => void mutate(() => api<Sharing>(`/api/files/${file!.id}/sharing/link`, { method: "POST" }))}
-                  >
-                    <Globe /> Create public link
-                  </Button>
-                )}
-                {data.publicLink ? (
-                  <LinkPasswordControl
-                    fileId={file!.id}
-                    protectedNow={data.publicLink.passwordProtected}
-                    busy={busy}
-                    onChange={(fn) => void mutate(fn)}
-                  />
-                ) : null}
-              </section>
-
-              <section aria-labelledby="people" className="space-y-2">
-                <h3 id="people" className="text-sm font-semibold">
-                  Members with access <span className="font-normal text-slate-500">(view & download)</span>
-                </h3>
-                <ul className="space-y-1">
-                  {data.members.map((m) => (
-                    <li key={m.id} className="flex items-center gap-3 rounded-lg px-2 py-1.5">
-                      <span className="flex size-8 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold uppercase dark:bg-slate-800">
-                        {(m.name ?? m.email).slice(0, 1)}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm">{m.name ?? m.email}</span>
-                        <span className="block truncate text-xs text-slate-500">{m.email}</span>
-                      </span>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label={`Remove ${m.email}`}
-                        disabled={busy}
-                        onClick={() => void setMembers(memberIds.filter((id) => id !== m.id))}
-                      >
-                        <X />
-                      </Button>
-                    </li>
-                  ))}
-                  {!data.members.length ? <li className="px-2 text-sm text-slate-500">Not shared with any member yet.</li> : null}
-                </ul>
-                <Label htmlFor="member-search" className="sr-only">
-                  Add member
-                </Label>
-                <Input id="member-search" placeholder="Add members by name or email" value={q} onChange={(e) => setQ(e.target.value)} />
-                {candidates.length ? (
-                  <ul className="max-h-40 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-800" aria-label="Suggestions">
-                    {candidates.map((m) => (
-                      <li key={m.id}>
-                        <button
-                          className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
-                          disabled={busy}
-                          onClick={() => void setMembers([...memberIds, m.id])}
-                        >
-                          <UserPlus className="size-4 text-slate-500" />
-                          <span className="truncate">{m.name ? `${m.name} · ${m.email}` : m.email}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </section>
-            </>
-          ) : null}
-        </DialogBody>
-        <DialogFooter>
-          <Button onClick={onClose}>Done</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -429,14 +275,14 @@ function LinkPasswordControl({
     });
   };
   return (
-    <div className="space-y-2 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+    <div className="grid gap-2 rounded-lg border p-3">
       <div className="flex items-center gap-2 text-sm">
-        <KeyRound className="size-4 text-slate-500" aria-hidden />
+        <KeyRound className="size-4 text-muted-foreground" aria-hidden />
         <span className="flex-1 font-medium">{protectedNow ? "Password required to open" : "No password"}</span>
-        <Badge tone={protectedNow ? "amber" : "slate"}>{protectedNow ? "Protected" : "Open"}</Badge>
+        <Badge variant={protectedNow ? "default" : "secondary"}>{protectedNow ? "Protected" : "Open"}</Badge>
       </div>
       {editing ? (
-        <form onSubmit={save} className="space-y-2">
+        <form onSubmit={save} className="grid gap-2">
           <Label htmlFor="link-password">{protectedNow ? "New password" : "Password"}</Label>
           <div className="flex gap-2">
             <Input
@@ -453,7 +299,7 @@ function LinkPasswordControl({
               {show ? <EyeOff /> : <Eye />}
             </Button>
           </div>
-          <p id="link-password-help" className="text-xs text-slate-500">
+          <p id="link-password-help" className="text-xs text-muted-foreground">
             8–128 characters. Viewers must enter it to preview or download. It cannot be shown again.
           </p>
           <div className="flex gap-2">
@@ -486,23 +332,204 @@ function LinkPasswordControl({
   );
 }
 
+const initials = (s: string) => s.slice(0, 1).toUpperCase();
+
+export function ShareDialog({ file, onClose, onChanged }: { file: FileItem | null; onClose: () => void; onChanged: () => void }) {
+  const open = !!file;
+  const { data, error, loading, reload, setData } = useApi<Sharing>(file ? `/api/files/${file.id}/sharing` : null);
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<MemberLite[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  // Fresh member search for every file.
+  useEffect(() => {
+    setQ("");
+    setResults([]);
+  }, [file?.id]);
+
+  useEffect(() => {
+    if (!open) return;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => {
+      api<{ members: MemberLite[] }>(`/api/members?q=${encodeURIComponent(q)}`, { signal: ctrl.signal })
+        .then((r) => setResults(r.members))
+        .catch(() => {});
+    }, 200);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [q, open]);
+
+  const mutate = async (fn: () => Promise<Sharing>) => {
+    setBusy(true);
+    try {
+      setData(await fn());
+      onChanged();
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const setMembers = (ids: string[]) =>
+    mutate(() => api<Sharing>(`/api/files/${file!.id}/sharing/members`, { method: "PUT", body: { userIds: ids } }));
+  const setAccess = (v: string) =>
+    mutate(() => api<Sharing>(`/api/files/${file!.id}/sharing/link`, { method: v === "public" ? "POST" : "DELETE" }));
+  const memberIds = data?.members.map((m) => m.id) ?? [];
+  const candidates = results.filter((r) => !memberIds.includes(r.id));
+
+  const copy = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied");
+    } catch {
+      toast.error("Could not copy. Select the link and copy it manually.");
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="truncate pr-6">Share “{file?.name ?? ""}”</DialogTitle>
+          <DialogDescription>Choose who can open this file.</DialogDescription>
+        </DialogHeader>
+        {loading && !data ? <Spinner /> : null}
+        {error ? <ErrorState message={error} onRetry={reload} /> : null}
+        {data ? (
+          <div className="grid gap-5">
+            <section aria-labelledby="people" className="grid gap-2">
+              <h3 id="people" className="text-sm font-medium">
+                Members with access <span className="font-normal text-muted-foreground">(view & download)</span>
+              </h3>
+              <div className="relative">
+                <UserPlus className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+                <Input
+                  aria-label="Add member"
+                  placeholder="Add members by name or email"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              {candidates.length ? (
+                <ul className="max-h-40 overflow-y-auto rounded-md border" aria-label="Suggestions">
+                  {candidates.map((m) => (
+                    <li key={m.id}>
+                      <button
+                        className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm hover:bg-accent"
+                        disabled={busy}
+                        onClick={() => void setMembers([...memberIds, m.id])}
+                      >
+                        <Avatar className="size-7">
+                          <AvatarFallback className="text-xs">{initials(m.name ?? m.email)}</AvatarFallback>
+                        </Avatar>
+                        <span className="truncate">{m.name ? `${m.name} · ${m.email}` : m.email}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <ul className="grid gap-1">
+                {data.members.map((m) => (
+                  <li key={m.id} className="flex items-center gap-3 rounded-md px-1 py-1">
+                    <Avatar className="size-8">
+                      <AvatarFallback className="text-xs">{initials(m.name ?? m.email)}</AvatarFallback>
+                    </Avatar>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm">{m.name ?? m.email}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{m.email}</span>
+                    </span>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      aria-label={`Remove ${m.email}`}
+                      disabled={busy}
+                      onClick={() => void setMembers(memberIds.filter((id) => id !== m.id))}
+                    >
+                      <X />
+                    </Button>
+                  </li>
+                ))}
+                {!data.members.length ? <li className="px-1 text-sm text-muted-foreground">Not shared with any member yet.</li> : null}
+              </ul>
+            </section>
+
+            <Separator />
+
+            <section aria-labelledby="general-access" className="grid gap-3">
+              <h3 id="general-access" className="text-sm font-medium">
+                General access
+              </h3>
+              <div className="flex items-start gap-3">
+                <span
+                  className={
+                    data.visibility === "public"
+                      ? "flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary"
+                      : "flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+                  }
+                >
+                  {data.visibility === "public" ? <Globe className="size-4" /> : <Lock className="size-4" />}
+                </span>
+                <div className="grid min-w-0 flex-1 gap-1">
+                  <Select value={data.visibility} onValueChange={(v) => void setAccess(v)} disabled={busy}>
+                    <SelectTrigger aria-label="General access" className="w-full sm:w-64">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="private">Restricted</SelectItem>
+                      <SelectItem value="public">Anyone with the link</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {data.visibility === "public"
+                      ? "Anyone with the link can view and download without signing in."
+                      : "Only you and the members above can open this file."}
+                  </p>
+                </div>
+              </div>
+              {data.publicLink ? (
+                <>
+                  <div className="flex gap-2">
+                    <Input readOnly value={data.publicLink.url} aria-label="Public link" onFocus={(e) => e.currentTarget.select()} className="text-xs" />
+                    <Button variant="outline" aria-label="Copy link" onClick={() => void copy(data.publicLink!.url)}>
+                      <Copy /> Copy
+                    </Button>
+                  </div>
+                  <LinkPasswordControl fileId={file!.id} protectedNow={data.publicLink.passwordProtected} busy={busy} onChange={(fn) => void mutate(fn)} />
+                </>
+              ) : null}
+            </section>
+          </div>
+        ) : null}
+        <DialogFooter>
+          <Button onClick={onClose}>Done</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /** Preview streams from /api/files/:id/preview (same origin only). */
 export function PreviewDialog({ file, onClose }: { file: FileItem | null; onClose: () => void }) {
   const src = file ? `/api/files/${file.id}/preview` : "";
   const t = file?.contentType ?? "";
-  let body = <p className="p-6 text-sm text-slate-500">Preview is not available for this file type. Download it to open.</p>;
+  let body = <p className="p-6 text-sm text-muted-foreground">Preview is not available for this file type. Download it to open.</p>;
   if (file?.inline) {
     if (t.startsWith("image/")) body = <img src={src} alt={file.name} className="mx-auto max-h-[70dvh] max-w-full object-contain" />;
-    else if (t.startsWith("video/"))
-      body = <video src={src} controls playsInline preload="metadata" className="mx-auto max-h-[70dvh] max-w-full" />;
+    else if (t.startsWith("video/")) body = <video src={src} controls playsInline preload="metadata" className="mx-auto max-h-[70dvh] max-w-full" />;
     else if (t.startsWith("audio/")) body = <audio src={src} controls preload="metadata" className="m-6 w-[calc(100%-3rem)]" />;
     else body = <iframe src={src} title={file.name} className="h-[70dvh] w-full border-0 bg-white" />;
   }
   return (
     <Dialog open={!!file} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent wide>
-        <DialogHeader title={file?.name ?? ""} description={file ? formatBytes(file.size) : undefined} />
-        <div className="min-h-40 overflow-auto bg-slate-100 dark:bg-slate-950">{file ? body : null}</div>
+      <DialogContent className="gap-3 p-4 sm:max-w-5xl">
+        <DialogHeader>
+          <DialogTitle className="truncate pr-6">{file?.name ?? ""}</DialogTitle>
+          <DialogDescription>{file ? formatBytes(file.size) : ""}</DialogDescription>
+        </DialogHeader>
+        <div className="min-h-40 overflow-auto rounded-md bg-muted">{file ? body : null}</div>
         <DialogFooter>
           <Button asChild variant="outline">
             <a href={file ? `/api/files/${file.id}/download` : "#"}>

@@ -1,8 +1,12 @@
 import { LogIn, ShieldAlert } from "lucide-react";
+import type { ReactNode } from "react";
 import { useLocation, useSearchParams } from "react-router";
-import { Wordmark } from "@/components/Logo";
 import { OfflineBanner } from "@/components/AppShell";
+import { Wordmark } from "@/components/Logo";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { Alert, AlertDescription } from "@/components/Alert";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 
 const LOGIN_ERRORS: Record<string, string> = {
   cancelled: "Sign-in was cancelled.",
@@ -18,13 +22,18 @@ const DENIED: Record<string, string> = {
   account_mismatch: "This email is linked to a different Google account.",
 };
 
-function Card({ children }: { children: React.ReactNode }) {
+function Shell({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-full flex-col">
+    <div className="flex min-h-full flex-col bg-muted/40">
       <OfflineBanner />
-      <div className="flex flex-1 items-center justify-center p-4">
-        <div className="w-full max-w-sm space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <Wordmark />
+      <div className="flex justify-end p-3">
+        <ThemeToggle />
+      </div>
+      <div className="flex flex-1 items-center justify-center p-4 pb-16">
+        <div className="grid w-full max-w-sm gap-6">
+          <div className="flex justify-center">
+            <Wordmark />
+          </div>
           {children}
         </div>
       </div>
@@ -38,22 +47,28 @@ export function LoginPage() {
   const err = params.get("error");
   const from = (loc.state as { from?: string } | null)?.from ?? "/";
   return (
-    <Card>
-      <div>
-        <h1 className="text-xl font-semibold">Sign in</h1>
-        <p className="mt-1 text-sm text-slate-500">Use the Google account your Admin invited.</p>
-      </div>
-      {err ? (
-        <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-200">
-          {LOGIN_ERRORS[err] ?? "Sign-in failed."}
-        </p>
-      ) : null}
-      <Button asChild size="lg" className="w-full">
-        <a href={`/auth/login?return_to=${encodeURIComponent(from)}`}>
-          <LogIn /> Continue with Google
-        </a>
-      </Button>
-    </Card>
+    <Shell>
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h1 className="text-xl">Sign in</h1>
+          </CardTitle>
+          <CardDescription>Use the Google account your Admin invited.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          {err ? (
+            <Alert variant="destructive">
+              <AlertDescription>{LOGIN_ERRORS[err] ?? "Sign-in failed."}</AlertDescription>
+            </Alert>
+          ) : null}
+          <Button asChild size="lg" className="w-full">
+            <a href={`/auth/login?return_to=${encodeURIComponent(from)}`}>
+              <LogIn /> Continue with Google
+            </a>
+          </Button>
+        </CardContent>
+      </Card>
+    </Shell>
   );
 }
 
@@ -61,17 +76,21 @@ export function NotAuthorizedPage() {
   const [params] = useSearchParams();
   const reason = params.get("reason") ?? "not_invited";
   return (
-    <Card>
-      <div className="flex items-start gap-3">
-        <ShieldAlert className="mt-0.5 size-6 shrink-0 text-amber-600" aria-hidden />
-        <div>
-          <h1 className="text-xl font-semibold">No access</h1>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{DENIED[reason] ?? DENIED.not_invited}</p>
-        </div>
-      </div>
-      <Button asChild variant="outline" className="w-full">
-        <a href="/auth/login">Try another account</a>
-      </Button>
-    </Card>
+    <Shell>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldAlert className="size-5 text-warning" aria-hidden />
+            <h1 className="text-xl">No access</h1>
+          </CardTitle>
+          <CardDescription>{DENIED[reason] ?? DENIED.not_invited}</CardDescription>
+        </CardHeader>
+        <CardFooter>
+          <Button asChild variant="outline" className="w-full">
+            <a href="/auth/login">Try another account</a>
+          </Button>
+        </CardFooter>
+      </Card>
+    </Shell>
   );
 }

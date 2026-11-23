@@ -1,20 +1,28 @@
-import { File, FileImage, FileText, FileVideo, Folder, Globe, MoreVertical, Music, Users } from "lucide-react";
-import { useRef, type KeyboardEvent, type ReactNode } from "react";
+import { ArrowDown, ArrowUp, File, FileImage, FileText, FileVideo, Folder, Globe, MoreVertical, Music, Users } from "lucide-react";
+import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { DriveItem, FileItem } from "@shared/types";
-import { cn, formatBytes, formatDate } from "@/lib/utils";
-import { Button } from "./ui/button";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuShortcut,
   ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
-} from "./ui/menu";
+} from "@/components/ui/dropdown-menu";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { cn, formatBytes, formatDate } from "@/lib/utils";
 
 export interface ItemAction {
   id: string;
@@ -26,13 +34,192 @@ export interface ItemAction {
   shortcut?: string;
 }
 
-export function fileIcon(f: FileItem) {
+export type SortKey = "name" | "updated" | "size";
+export type SortState = { key: SortKey; dir: "asc" | "desc" };
+export type ViewMode = "list" | "grid";
+
+export const itemKey = (i: DriveItem) => `${i.kind}:${i.id}`;
+
+export function fileIcon(f: FileItem, className = "") {
   const t = f.contentType;
-  if (t.startsWith("image/")) return <FileImage className="text-violet-600" />;
-  if (t.startsWith("video/")) return <FileVideo className="text-rose-600" />;
-  if (t.startsWith("audio/")) return <Music className="text-amber-600" />;
-  if (t === "application/pdf" || t.startsWith("text/")) return <FileText className="text-sky-600" />;
-  return <File className="text-slate-500" />;
+  if (t.startsWith("image/")) return <FileImage className={cn("text-violet-600 dark:text-violet-400", className)} />;
+  if (t.startsWith("video/")) return <FileVideo className={cn("text-rose-600 dark:text-rose-400", className)} />;
+  if (t.startsWith("audio/")) return <Music className={cn("text-amber-600 dark:text-amber-400", className)} />;
+  if (t === "application/pdf" || t.startsWith("text/")) return <FileText className={cn("text-sky-600 dark:text-sky-400", className)} />;
+  return <File className={cn("text-muted-foreground", className)} />;
+}
+
+function ItemIcon({ item, className }: { item: DriveItem; className?: string }) {
+  return item.kind === "folder" ? <Folder className={cn("fill-primary/15 text-primary", className)} /> : fileIcon(item, className);
+}
+
+function sortItems(items: DriveItem[], sort: SortState): DriveItem[] {
+  const dir = sort.dir === "asc" ? 1 : -1;
+  const by = (a: DriveItem, b: DriveItem) => {
+    if (sort.key === "size") return ((a.kind === "file" ? a.size : -1) - (b.kind === "file" ? b.size : -1)) * dir;
+    if (sort.key === "updated") return ((a.trashedAt ?? a.updatedAt) - (b.trashedAt ?? b.updatedAt)) * dir;
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) * dir;
+  };
+  // Folders always first.
+  return [...items].sort((a, b) => (a.kind === b.kind ? by(a, b) : a.kind === "folder" ? -1 : 1));
+}
+
+function ActionsMenu({ item, actions }: { item: DriveItem; actions: ItemAction[] }) {
+  const isMobile = useIsMobile();
+  const [sheet, setSheet] = useState(false);
+  if (!actions.length) return null;
+  const trigger = (
+    <Button
+      size="icon"
+      variant="ghost"
+      className="size-10 md:size-8"
+      aria-label={`Actions for ${item.name}`}
+      onClick={isMobile ? (e) => (e.stopPropagation(), setSheet(true)) : (e) => e.stopPropagation()}
+    >
+      <MoreVertical />
+    </Button>
+  );
+  if (isMobile) {
+    return (
+      <>
+        {trigger}
+        <Sheet open={sheet} onOpenChange={setSheet}>
+          <SheetContent side="bottom" className="rounded-t-2xl pb-[max(1rem,env(safe-area-inset-bottom))]">
+            <SheetHeader className="pb-0">
+              <SheetTitle className="flex items-center gap-2 truncate pr-8">
+                <ItemIcon item={item} className="size-5 shrink-0" />
+                <span className="truncate">{item.name}</span>
+              </SheetTitle>
+              <SheetDescription className="sr-only">Actions</SheetDescription>
+            </SheetHeader>
+            <ul className="px-2" role="menu" aria-label={`Actions for ${item.name}`}>
+              {actions.map((a) => (
+                <li key={a.id} role="none">
+                  {a.separatorBefore ? <div className="my-1 h-px bg-border" /> : null}
+                  <button
+                    role="menuitem"
+                    className={cn(
+                      "flex min-h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm hover:bg-accent [&_svg]:size-5 [&_svg]:text-muted-foreground",
+                      a.destructive && "text-destructive [&_svg]:text-destructive",
+                    )}
+                    onClick={() => {
+                      setSheet(false);
+                      a.onSelect();
+                    }}
+                  >
+                    {a.icon}
+                    {a.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </SheetContent>
+        </Sheet>
+      </>
+    );
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        {actions.map((a) => (
+          <div key={a.id}>
+            {a.separatorBefore ? <DropdownMenuSeparator /> : null}
+            <DropdownMenuItem variant={a.destructive ? "destructive" : "default"} onSelect={a.onSelect}>
+              {a.icon}
+              {a.label}
+              {a.shortcut ? <DropdownMenuShortcut>{a.shortcut}</DropdownMenuShortcut> : null}
+            </DropdownMenuItem>
+          </div>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function RowContextMenu({ actions, children }: { actions: ItemAction[]; children: ReactNode }) {
+  if (!actions.length) return <>{children}</>;
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuContent className="w-52">
+        {actions.map((a) => (
+          <div key={a.id}>
+            {a.separatorBefore ? <ContextMenuSeparator /> : null}
+            <ContextMenuItem variant={a.destructive ? "destructive" : "default"} onSelect={a.onSelect}>
+              {a.icon}
+              {a.label}
+              {a.shortcut ? <ContextMenuShortcut>{a.shortcut}</ContextMenuShortcut> : null}
+            </ContextMenuItem>
+          </div>
+        ))}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+function SharingBadges({ item }: { item: DriveItem }) {
+  if (item.kind !== "file") return null;
+  return (
+    <>
+      {item.hasPublicLink ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Globe className="size-4 shrink-0 text-primary" aria-label="Public link" />
+          </TooltipTrigger>
+          <TooltipContent>Anyone with the link</TooltipContent>
+        </Tooltip>
+      ) : null}
+      {item.sharedWithCount > 0 ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Users className="size-4 shrink-0 text-muted-foreground" aria-label={`Shared with ${item.sharedWithCount}`} />
+          </TooltipTrigger>
+          <TooltipContent>Shared with {item.sharedWithCount} member(s)</TooltipContent>
+        </Tooltip>
+      ) : null}
+    </>
+  );
+}
+
+function SortHeader({
+  k,
+  sort,
+  onSort,
+  children,
+  className,
+}: {
+  k: SortKey;
+  sort: SortState;
+  onSort: (k: SortKey) => void;
+  children: string;
+  className?: string;
+}) {
+  const active = sort.key === k;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(k)}
+      className={cn("inline-flex items-center gap-1 rounded hover:text-foreground", active && "text-foreground", className)}
+      aria-label={`Sort by ${children}${active ? (sort.dir === "asc" ? ", ascending" : ", descending") : ""}`}
+    >
+      {children}
+      {active ? sort.dir === "asc" ? <ArrowUp className="size-3.5" /> : <ArrowDown className="size-3.5" /> : null}
+    </button>
+  );
+}
+
+/** Number of grid columns currently rendered (tiles sharing the first tile's row). */
+function gridColumns(container: HTMLElement | null): number {
+  const tiles = container?.querySelectorAll<HTMLElement>("[data-row]");
+  if (!tiles?.length) return 1;
+  const top = tiles[0]!.offsetTop;
+  let n = 0;
+  for (const t of tiles) {
+    if (t.offsetTop !== top) break;
+    n++;
+  }
+  return Math.max(1, n);
 }
 
 interface Props {
@@ -41,10 +228,39 @@ interface Props {
   onOpen: (item: DriveItem) => void;
   showOwner?: boolean;
   dateLabel?: string;
+  view?: ViewMode;
+  sort: SortState;
+  onSort: (key: SortKey) => void;
+  selected?: Set<string>;
+  onSelectedChange?: (next: Set<string>) => void;
 }
 
-export function FileList({ items, actionsFor, onOpen, showOwner, dateLabel = "Modified" }: Props) {
-  const listRef = useRef<HTMLUListElement>(null);
+export function FileList({
+  items,
+  actionsFor,
+  onOpen,
+  showOwner,
+  dateLabel = "Modified",
+  view = "list",
+  sort,
+  onSort,
+  selected,
+  onSelectedChange,
+}: Props) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const sorted = useMemo(() => sortItems(items, sort), [items, sort]);
+  const selectable = !!onSelectedChange && !!selected;
+  const allSelected = selectable && sorted.length > 0 && sorted.every((i) => selected.has(itemKey(i)));
+  const someSelected = selectable && !allSelected && sorted.some((i) => selected.has(itemKey(i)));
+
+  const toggle = (item: DriveItem, on?: boolean) => {
+    if (!selectable) return;
+    const next = new Set(selected);
+    const k = itemKey(item);
+    if (on ?? !next.has(k)) next.add(k);
+    else next.delete(k);
+    onSelectedChange(next);
+  };
 
   const focusRow = (idx: number) => {
     const rows = listRef.current?.querySelectorAll<HTMLElement>("[data-row]");
@@ -53,144 +269,178 @@ export function FileList({ items, actionsFor, onOpen, showOwner, dateLabel = "Mo
   };
 
   const onKey = (e: KeyboardEvent<HTMLElement>, item: DriveItem, idx: number) => {
-    const actions = actionsFor(item);
-    const run = (id: string) => actions.find((a) => a.id === id)?.onSelect();
-    if (e.key === "Enter") {
+    if (e.target !== e.currentTarget) return; // let inner controls handle their own keys
+    const run = (id: string) => actionsFor(item).find((a) => a.id === id)?.onSelect();
+    const step = view === "grid" ? gridColumns(listRef.current) : 1;
+    const keys: Record<string, () => void> = {
+      Enter: () => onOpen(item),
+      ...(selectable ? { " ": () => toggle(item) } : {}),
+      ArrowDown: () => focusRow(idx + step),
+      ArrowUp: () => focusRow(idx - step),
+      ...(view === "grid" ? { ArrowRight: () => focusRow(idx + 1), ArrowLeft: () => focusRow(idx - 1) } : {}),
+      Home: () => focusRow(0),
+      End: () => focusRow(sorted.length - 1),
+      F2: () => run("rename"),
+      Delete: () => run("trash"),
+    };
+    const fn = keys[e.key];
+    if (fn) {
       e.preventDefault();
-      onOpen(item);
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      focusRow(idx + 1);
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      focusRow(idx - 1);
-    } else if (e.key === "Home") {
-      e.preventDefault();
-      focusRow(0);
-    } else if (e.key === "End") {
-      e.preventDefault();
-      focusRow(items.length - 1);
-    } else if (e.key === "F2") {
-      e.preventDefault();
-      run("rename");
-    } else if (e.key === "Delete") {
-      e.preventDefault();
-      run("trash");
+      fn();
     }
   };
 
-  return (
-    <div className="px-2 sm:px-4">
-      <div
-        aria-hidden
-        className="hidden grid-cols-[minmax(0,1fr)_10rem_11rem_6rem_3rem] gap-3 border-b border-slate-200 px-3 py-2 text-xs font-medium tracking-wide text-slate-500 uppercase md:grid dark:border-slate-800"
-      >
-        <span>Name</span>
-        <span>{showOwner ? "Owner" : ""}</span>
-        <span>{dateLabel}</span>
-        <span className="text-right">Size</span>
-        <span />
-      </div>
-      <ul ref={listRef} aria-label="Files and folders" className="divide-y divide-slate-100 dark:divide-slate-800/70">
-        {items.map((item, idx) => {
-          const actions = actionsFor(item);
-          const label = item.kind === "folder" ? `Folder ${item.name}` : `File ${item.name}`;
-          return (
-            <ContextMenu key={`${item.kind}-${item.id}`}>
-              <ContextMenuTrigger asChild>
-                <li
+  const selectBox = (item: DriveItem) =>
+    selectable ? (
+      <Checkbox
+        checked={selected.has(itemKey(item))}
+        onCheckedChange={(v) => toggle(item, v === true)}
+        onClick={(e) => e.stopPropagation()}
+        aria-label={`Select ${item.name}`}
+        className="size-5 md:size-4"
+      />
+    ) : null;
+
+  if (view === "grid") {
+    return (
+      <div className="px-4 pb-4 sm:px-6">
+        <div className="mb-2 flex items-center gap-3 text-xs text-muted-foreground">
+          {selectable ? (
+            <Checkbox
+              checked={allSelected ? true : someSelected ? "indeterminate" : false}
+              onCheckedChange={(v) => onSelectedChange(v === true ? new Set(sorted.map(itemKey)) : new Set())}
+              aria-label="Select all"
+            />
+          ) : null}
+          <span>Sort:</span>
+          <SortHeader k="name" sort={sort} onSort={onSort}>Name</SortHeader>
+          <SortHeader k="updated" sort={sort} onSort={onSort}>{dateLabel}</SortHeader>
+          <SortHeader k="size" sort={sort} onSort={onSort}>Size</SortHeader>
+        </div>
+        <div ref={listRef} role="list" aria-label="Files and folders" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+          {sorted.map((item, idx) => {
+            const actions = actionsFor(item);
+            const isSel = selected?.has(itemKey(item));
+            return (
+              <RowContextMenu key={itemKey(item)} actions={actions}>
+                <div
+                  role="listitem"
                   data-row
                   tabIndex={0}
-                  aria-label={label}
+                  aria-label={`${item.kind === "folder" ? "Folder" : "File"} ${item.name}`}
                   onDoubleClick={() => onOpen(item)}
                   onKeyDown={(e) => onKey(e, item, idx)}
-                  className="group grid min-h-14 cursor-default grid-cols-[minmax(0,1fr)_3rem] items-center gap-3 rounded-lg px-3 py-2 hover:bg-slate-100/70 focus:bg-brand-50 focus:outline-none md:grid-cols-[minmax(0,1fr)_10rem_11rem_6rem_3rem] dark:hover:bg-slate-800/50 dark:focus:bg-brand-800/20"
+                  className={cn(
+                    "group relative flex flex-col rounded-xl border bg-card p-3 text-card-foreground shadow-xs outline-none transition-colors hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                    isSel && "border-primary bg-accent/60",
+                  )}
                 >
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    onClick={() => onOpen(item)}
-                    className="flex min-w-0 items-center gap-3 text-left [&_svg]:size-5 [&_svg]:shrink-0"
-                  >
-                    {item.kind === "folder" ? <Folder className="fill-brand-100 text-brand-700" /> : fileIcon(item)}
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">{item.name}</span>
-                      <span className="block truncate text-xs text-slate-500 md:hidden">
-                        {item.kind === "file" ? `${formatBytes(item.size)} · ` : ""}
-                        {formatDate(item.trashedAt ?? item.updatedAt)}
-                        {showOwner && item.kind === "file" ? ` · ${item.owner.name ?? item.owner.email}` : ""}
-                      </span>
+                  <div className="absolute top-2 left-2">{selectBox(item)}</div>
+                  <div className="absolute top-1 right-1">
+                    <ActionsMenu item={item} actions={actions} />
+                  </div>
+                  <button type="button" tabIndex={-1} onClick={() => onOpen(item)} className="flex min-w-0 flex-col gap-1 text-left">
+                    <span className="flex justify-center pt-6 pb-1">
+                      <ItemIcon item={item} className="size-12 stroke-[1.25]" />
                     </span>
-                    {item.kind === "file" && item.hasPublicLink ? (
-                      <Globe className="!size-4 text-brand-700" aria-label="Public link" />
-                    ) : null}
-                    {item.kind === "file" && item.sharedWithCount > 0 ? (
-                      <Users className="!size-4 text-slate-500" aria-label={`Shared with ${item.sharedWithCount}`} />
-                    ) : null}
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-sm font-medium" title={item.name}>
+                        {item.name}
+                      </span>
+                      <SharingBadges item={item} />
+                    </span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {item.kind === "file" ? `${formatBytes(item.size)} · ` : ""}
+                      {formatDate(item.trashedAt ?? item.updatedAt)}
+                    </span>
                   </button>
-                  <span className="hidden truncate text-sm text-slate-500 md:block">
-                    {showOwner && item.kind === "file" ? (item.owner.name ?? item.owner.email) : ""}
+                </div>
+              </RowContextMenu>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  const cols = showOwner
+    ? "md:grid-cols-[auto_minmax(0,1fr)_11rem_11rem_6rem_2.5rem]"
+    : "md:grid-cols-[auto_minmax(0,1fr)_11rem_6rem_2.5rem]";
+
+  return (
+    <div className="px-2 pb-4 sm:px-4">
+      <div
+        className={cn(
+          "hidden items-center gap-3 border-b px-3 py-2 text-xs font-medium tracking-wide text-muted-foreground uppercase md:grid",
+          cols,
+        )}
+      >
+        <span className="flex w-5 justify-center">
+          {selectable ? (
+            <Checkbox
+              checked={allSelected ? true : someSelected ? "indeterminate" : false}
+              onCheckedChange={(v) => onSelectedChange(v === true ? new Set(sorted.map(itemKey)) : new Set())}
+              aria-label="Select all"
+            />
+          ) : null}
+        </span>
+        <SortHeader k="name" sort={sort} onSort={onSort}>Name</SortHeader>
+        {showOwner ? <span>Owner</span> : null}
+        <SortHeader k="updated" sort={sort} onSort={onSort}>{dateLabel}</SortHeader>
+        <SortHeader k="size" sort={sort} onSort={onSort} className="justify-self-end">
+          Size
+        </SortHeader>
+        <span />
+      </div>
+      <div ref={listRef} role="list" aria-label="Files and folders" className="divide-y divide-border/60">
+        {sorted.map((item, idx) => {
+          const actions = actionsFor(item);
+          const isSel = selected?.has(itemKey(item));
+          return (
+            <RowContextMenu key={itemKey(item)} actions={actions}>
+              <div
+                role="listitem"
+                data-row
+                tabIndex={0}
+                aria-label={`${item.kind === "folder" ? "Folder" : "File"} ${item.name}`}
+                onDoubleClick={() => onOpen(item)}
+                onKeyDown={(e) => onKey(e, item, idx)}
+                className={cn(
+                  "group grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-3 py-1.5 outline-none hover:bg-accent/50 focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/40",
+                  cols,
+                  isSel && "bg-accent/70",
+                )}
+              >
+                <span className="flex w-5 justify-center">{selectBox(item)}</span>
+                <button type="button" tabIndex={-1} onClick={() => onOpen(item)} className="flex min-w-0 items-center gap-3 text-left">
+                  <ItemIcon item={item} className="size-5 shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">{item.name}</span>
+                    <span className="block truncate text-xs text-muted-foreground md:hidden">
+                      {item.kind === "file" ? `${formatBytes(item.size)} · ` : ""}
+                      {formatDate(item.trashedAt ?? item.updatedAt)}
+                      {showOwner && item.kind === "file" ? ` · ${item.owner.name ?? item.owner.email}` : ""}
+                    </span>
                   </span>
-                  <span className="hidden text-sm whitespace-nowrap text-slate-500 md:block">{formatDate(item.trashedAt ?? item.updatedAt)}</span>
-                  <span className="hidden text-right text-sm text-slate-500 tabular-nums md:block">
-                    {item.kind === "file" ? formatBytes(item.size) : "—"}
+                  <SharingBadges item={item} />
+                </button>
+                {showOwner ? (
+                  <span className="hidden truncate text-sm text-muted-foreground md:block">
+                    {item.kind === "file" ? (item.isOwner ? "me" : (item.owner.name ?? item.owner.email)) : ""}
                   </span>
-                  <span className="flex justify-end">
-                    {actions.length ? (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button size="icon" variant="ghost" aria-label={`Actions for ${item.name}`}>
-                            <MoreVertical />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent>
-                          {actions.map((a) => (
-                            <div key={a.id}>
-                              {a.separatorBefore ? <DropdownMenuSeparator /> : null}
-                              <DropdownMenuItem destructive={a.destructive} onSelect={a.onSelect}>
-                                {a.icon}
-                                <span className="flex-1">{a.label}</span>
-                                {a.shortcut ? <kbd className="hidden text-xs text-slate-400 sm:inline">{a.shortcut}</kbd> : null}
-                              </DropdownMenuItem>
-                            </div>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    ) : null}
-                  </span>
-                </li>
-              </ContextMenuTrigger>
-              {actions.length ? (
-                <ContextMenuContent>
-                  {actions.map((a) => (
-                    <div key={a.id}>
-                      {a.separatorBefore ? <ContextMenuSeparator /> : null}
-                      <ContextMenuItem destructive={a.destructive} onSelect={a.onSelect}>
-                        {a.icon}
-                        <span className="flex-1">{a.label}</span>
-                        {a.shortcut ? <kbd className="hidden text-xs text-slate-400 sm:inline">{a.shortcut}</kbd> : null}
-                      </ContextMenuItem>
-                    </div>
-                  ))}
-                </ContextMenuContent>
-              ) : null}
-            </ContextMenu>
+                ) : null}
+                <span className="hidden text-sm whitespace-nowrap text-muted-foreground md:block">{formatDate(item.trashedAt ?? item.updatedAt)}</span>
+                <span className="hidden text-right text-sm text-muted-foreground tabular-nums md:block">
+                  {item.kind === "file" ? formatBytes(item.size) : "—"}
+                </span>
+                <span className="flex justify-end">
+                  <ActionsMenu item={item} actions={actions} />
+                </span>
+              </div>
+            </RowContextMenu>
           );
         })}
-      </ul>
-    </div>
-  );
-}
-
-export function ListSkeleton() {
-  return (
-    <div className="space-y-2 p-4" aria-busy="true" aria-label="Loading files">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-3 px-3 py-2">
-          <div className="size-5 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
-          <div className={cn("h-4 animate-pulse rounded bg-slate-200 dark:bg-slate-800", i % 2 ? "w-1/3" : "w-1/2")} />
-        </div>
-      ))}
+      </div>
     </div>
   );
 }

@@ -13,7 +13,7 @@ This file is the shared source of conventions for every coding agent (Claude Cod
 ## Layout
 ```
 src/worker/         Hono Worker: routes/, services/, auth/, authz.ts, storage/s3.ts, lib/, db/
-src/web/            React SPA (Vite, Tailwind v4, Radix/shadcn-style ui/), pwa/, upload/
+src/web/            React SPA (Vite, Tailwind v4, shadcn/ui in components/ui via components.json), theme.tsx, pwa/, upload/
 src/shared/         API payload types
 src/dev/fake-s3.ts  In-process fake R2 S3 API (tests + local dev only)
 packages/mcp/       Local MCP server (stdio) for AI assistants, uses a personal access token
@@ -45,6 +45,8 @@ e2e/                Playwright against an isolated local stack (scripts/e2e-serv
 - **Share passwords**: PBKDF2-SHA256 (100k) + salt; unlock cookie is HMAC(link id, password_version, expiry), `Path=/s/<token>`, `SameSite=Strict`, 12 h; every `/s/*` request re-checks it. Lockout is per (link, client) in `share_unlock_attempts`, reserved atomically before PBKDF2. The unlock form relies on `Sec-Fetch-Site` because the page's `no-referrer` makes browsers send `Origin: null`.
 - **MCP** (`packages/mcp`): local stdio server; all local reads/writes go through `Workdir` (no `..`, no symlink escape, no silent overwrite).
 - **Logs** go through `lib/log.ts` (redaction). Never log tokens, cookies, presigned URLs or secrets.
+- **UI**: use shadcn/ui components and theme tokens (`bg-background`, `text-muted-foreground`, `bg-primary`, …) from `src/web/index.css`; no hard-coded palette colors. Add components with `npx shadcn@latest add <name>` and rewrite `from "cn"` imports to `@/lib/utils`. Keep text pairs ≥ WCAG AA in both themes.
+- **Theme**: Light/Dark/System via `.dark` on `<html>`; `public/theme-init.js` applies it before paint (CSP forbids inline script). The only Web Storage use allowed is the `filenest-theme` key (enforced by `tests/web/storage-hygiene.test.ts`); `fn_theme` cookie only ever maps to `light`/`dark` on the share page.
 - **PWA** caches the app shell only; `/api`, `/auth`, `/s` are network-only. No user data in Cache Storage / IndexedDB / Web Storage.
 - **D1**: parameterized queries only (Drizzle / `sql` template). ≤100 bound params per statement — prefer subqueries over large `IN (...)` lists. Use `atomicBatch` for multi-statement atomic writes mixing raw SQL.
 - **Migrations** are append-only once released. Keep `schema.ts` in sync (`tests/worker/schema.test.ts`).

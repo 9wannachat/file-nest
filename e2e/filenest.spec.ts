@@ -18,6 +18,12 @@ async function upload(page: Page, files: { name: string; mimeType: string; buffe
   await expect(page.getByRole("region", { name: "Uploads" })).toContainText("Uploads complete", { timeout: 20_000 });
 }
 
+async function setAccess(page: Page, dialog: import("@playwright/test").Locator, option: "Restricted" | "Anyone with the link") {
+  await dialog.getByRole("combobox", { name: "General access" }).click();
+  await page.getByRole("option", { name: option }).click();
+  await expect(dialog.getByRole("combobox", { name: "General access" })).toHaveText(option);
+}
+
 test.describe.configure({ mode: "serial" });
 
 test("upload, preview from app origin only, rename with keyboard", async ({ page }) => {
@@ -57,9 +63,8 @@ test("public link works signed-out, and revoke blocks the old token", async ({ p
   await page.getByRole("button", { name: `Actions for ${name}` }).click();
   await page.getByRole("menuitem", { name: "Share" }).click();
   const dialog = page.getByRole("dialog", { name: `Share “${name}”` });
-  await expect(dialog.getByText("Only people with access").first()).toBeVisible();
-  await dialog.getByRole("button", { name: "Create public link" }).click();
-  await expect(dialog.getByText("Anyone with the link").first()).toBeVisible();
+  await expect(dialog.getByRole("combobox", { name: "General access" })).toHaveText("Restricted");
+  await setAccess(page, dialog, "Anyone with the link");
   const url = await dialog.getByLabel("Public link").inputValue();
   expect(url).toMatch(/^http:\/\/localhost:8789\/s\/[A-Za-z0-9_-]{43}$/);
 
@@ -72,8 +77,8 @@ test("public link works signed-out, and revoke blocks the old token", async ({ p
   const dl = await p2.request.get(`${url}/download`);
   expect(await dl.text()).toBe("shared content");
 
-  await dialog.getByRole("button", { name: "Revoke link" }).click();
-  await expect(dialog.getByText("Only people with access").first()).toBeVisible();
+  await setAccess(page, dialog, "Restricted");
+  await expect(dialog.getByLabel("Public link")).toHaveCount(0);
   expect((await p2.goto(url))?.status()).toBe(404);
   expect((await p2.request.get(`${url}/preview`, { headers: { Range: "bytes=0-3" } })).status()).toBe(404);
   await anon.close();
@@ -86,7 +91,7 @@ test("password-protected link: locked page, real-browser unlock, scoped cookie",
   await page.getByRole("button", { name: `Actions for ${name}` }).click();
   await page.getByRole("menuitem", { name: "Share" }).click();
   const dialog = page.getByRole("dialog", { name: `Share “${name}”` });
-  await dialog.getByRole("button", { name: "Create public link" }).click();
+  await setAccess(page, dialog, "Anyone with the link");
   await dialog.getByRole("button", { name: "Add password" }).click();
   await dialog.getByLabel("Password", { exact: true }).fill("e2e-secret-pass");
   await dialog.getByRole("button", { name: "Save password" }).click();
@@ -111,7 +116,7 @@ test("password-protected link: locked page, real-browser unlock, scoped cookie",
 test("settings: create and revoke an API token", async ({ page, request }) => {
   await devLogin(page);
   await page.getByRole("button", { name: /^Account:/ }).click();
-  await page.getByRole("menuitem", { name: "API tokens" }).click();
+  await page.getByRole("menuitem", { name: "Settings & API tokens" }).click();
   await page.getByRole("textbox", { name: "Name", exact: true }).fill("e2e token");
   await page.getByRole("button", { name: "Create token" }).click();
   const tokenBox = page.getByLabel("New token", { exact: true });
@@ -162,6 +167,38 @@ test("logout revokes access; members cannot open admin", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "No access" })).toBeVisible();
 });
 
+test("theme: System follows the OS, explicit choice persists, share page matches", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await devLogin(page);
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
+
+  await page.getByRole("button", { name: /^Account:/ }).click();
+  await page.getByRole("menuitem", { name: "Theme" }).click();
+  await page.getByRole("menuitemradio", { name: "Dark" }).click();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await page.reload();
+  await expect(page.locator("html")).toHaveClass(/dark/); // no flash back to light: set before React mounts
+  expect(await page.evaluate(() => document.documentElement.style.colorScheme)).toBe("dark");
+
+  // The server-rendered share page follows the same choice via the fn_theme cookie.
+  const name = `theme-${Date.now()}.txt`;
+  await upload(page, [{ name, mimeType: "text/plain", buffer: Buffer.from("t") }]);
+  await page.getByRole("button", { name: `Actions for ${name}` }).click();
+  await page.getByRole("menuitem", { name: "Share" }).click();
+  const dialog = page.getByRole("dialog", { name: `Share “${name}”` });
+  await setAccess(page, dialog, "Anyone with the link");
+  const url = await dialog.getByLabel("Public link").inputValue();
+  await page.goto(url);
+  await expect(page.locator("html")).toHaveClass("dark");
+
+  // Back to System for the remaining tests.
+  await page.goto("/settings");
+  await page.getByRole("radio", { name: "System" }).click();
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
+});
+
 test("manifest and installability basics", async ({ request }) => {
   const m = await (await request.get("/manifest.webmanifest")).json();
   expect(m).toMatchObject({ name: "FileNest", short_name: "FileNest", id: "/", start_url: "/", scope: "/", display: "standalone" });
@@ -172,9 +209,12 @@ test("manifest and installability basics", async ({ request }) => {
 
 test("mobile: drive, actions menu and share sheet fit the viewport @mobile", async ({ page }) => {
   await devLogin(page);
-  await page.getByRole("button", { name: "Open navigation" }).click();
-  await expect(page.getByRole("dialog", { name: "Navigation" }).getByRole("link", { name: "Trash" })).toBeVisible();
-  await page.getByRole("button", { name: "Close navigation" }).click();
+  await page.getByRole("button", { name: "Toggle navigation" }).click();
+  const nav = page.getByRole("dialog", { name: "Navigation" });
+  await expect(nav.getByRole("link", { name: "Trash" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(nav).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Upload" }).last()).toBeVisible(); // floating action button
   const name = `m-${Date.now()}.txt`;
   await upload(page, [{ name, mimeType: "text/plain", buffer: Buffer.from("m") }]);
   const btn = page.getByRole("button", { name: `Actions for ${name}` });

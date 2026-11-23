@@ -14,7 +14,7 @@ export function Wordmark() {
     <span className="flex items-center gap-2 text-lg font-semibold tracking-tight">
       <Logo />
       <span>
-        File<span className="text-brand-700 dark:text-brand-500">Nest</span>
+        File<span className="text-primary">Nest</span>
       </span>
     </span>
   );

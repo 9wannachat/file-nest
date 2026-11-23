@@ -1,10 +1,11 @@
 import { WifiOff } from "lucide-react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router";
-import { Toaster } from "sonner";
+import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/auth";
 import { AppShell, OfflineBanner } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
-import { EmptyState, ErrorState, Spinner } from "@/components/ui/misc";
+import { EmptyState, ErrorState, Spinner } from "@/components/states";
 import { useOnline } from "@/lib/hooks";
 import { AdminPage } from "@/pages/AdminPage";
 import { LoginPage, NotAuthorizedPage } from "@/pages/AuthPages";
@@ -71,12 +72,14 @@ export function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <TooltipProvider delayDuration={300}>
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
           <Route path="/not-authorized" element={<NotAuthorizedPage />} />
           <Route path="/*" element={<Protected />} />
         </Routes>
         <Toaster position="top-center" richColors closeButton />
+        </TooltipProvider>
       </AuthProvider>
     </BrowserRouter>
   );

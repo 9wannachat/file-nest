@@ -1,4 +1,10 @@
 {
   "files": [],
+  "compilerOptions": {
+    "paths": {
+      "@shared/*": ["./src/shared/*"],
+      "@/*": ["./src/web/*"]
+    }
+  },
   "references": []
 }

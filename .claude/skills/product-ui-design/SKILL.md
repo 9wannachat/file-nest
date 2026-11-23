@@ -10,9 +10,10 @@ New screens, layout changes, visual polish.
 
 ## Design language
 - Name **FileNest**; logo `public/icons/favicon.svg` (replace with the owner's logo and run `pnpm icons`).
-- Brand teal (`brand-700 #0f766e`) for primary actions and “receiving new files”; slate neutrals; amber for warnings/offline; red for destructive.
-- Familiar file-manager patterns, original styling: left nav (My Drive / Shared with me / Trash / Admin), breadcrumb title, list with name/owner/modified/size, ⋯ row menu + right-click menu, drag-and-drop overlay, bottom-right upload panel.
-- Share dialog: “General access” card that is visibly different for Private (lock, neutral) vs Public (globe, brand border), then members list.
+- shadcn/ui (new-york) on Tailwind v4 tokens in `src/web/index.css`; brand teal is `--primary` in both Light and Dark; `--warning`/`--success`/`--destructive` for states. Never hard-code colors; check both themes and AA contrast.
+- App shell = shadcn Sidebar (collapsible to icons, Sheet on mobile) with storage meter and account menu (Theme: Light/Dark/System); ⌘K command palette for search and navigation.
+- Familiar file-manager patterns, original styling: breadcrumb title, sortable list or grid view (URL params), checkbox multi-select with a bulk toolbar, ⋯ row menu (bottom Sheet on mobile) + right-click menu, drag-and-drop overlay, floating upload button on mobile, bottom-right upload panel.
+- Share dialog: members first, then “General access” Select (Restricted / Anyone with the link) with lock/globe icon, copy link and optional password.
 - Storage Admin: status banner stating where new uploads go; per-target badges (Receiving new files / Accepting / Read-only / Healthy / Check failed / Secrets missing).
 - Mobile: nav drawer, dialogs become bottom sheets, metadata collapses under the filename.
 

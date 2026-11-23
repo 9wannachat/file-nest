@@ -1,17 +1,30 @@
-import { Tabs } from "radix-ui";
 import { CheckCircle2, CircleAlert, Database, Plus, RefreshCw, Star, Trash2, UserPlus } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import type { AuditEvent, Member, StorageCheck, StorageTargetInfo } from "@shared/types";
 import { useMe } from "@/auth";
+import { EmptyState, ErrorState, PageHeader, Spinner } from "@/components/states";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input, Label } from "@/components/ui/input";
-import { Badge, EmptyState, ErrorState, Spinner, Switch } from "@/components/ui/misc";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, errorMessage } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import { formatBytes, formatDate } from "@/lib/utils";
 
 const GB = 1024 ** 3;
+const QUOTA_CHOICES = [1, 5, 10, 25, 50, 100, 250, 500, 1000];
+
+function quotaOptions(current: number) {
+  const gb = Math.round(current / GB);
+  return [...new Set([...QUOTA_CHOICES, gb])].sort((a, b) => a - b);
+}
 
 function MembersTab() {
   const me = useMe();
@@ -44,82 +57,107 @@ function MembersTab() {
   };
 
   return (
-    <div className="space-y-4">
-      <form onSubmit={invite} className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-end dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex-1 space-y-1">
-          <Label htmlFor="invite-email">Invite by Google email</Label>
-          <Input id="invite-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="invite-role">Role</Label>
-          <select
-            id="invite-role"
-            value={role}
-            onChange={(e) => setRole(e.target.value as "member" | "admin")}
-            className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"
-          >
-            <option value="member">Member</option>
-            <option value="admin">Admin</option>
-          </select>
-        </div>
-        <Button type="submit" disabled={busy}>
-          <UserPlus /> Invite
-        </Button>
-      </form>
+    <div className="grid gap-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Invite a member</CardTitle>
+          <CardDescription>They sign in with the Google account for this email.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={invite} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="grid flex-1 gap-2">
+              <Label htmlFor="invite-email">Google email</Label>
+              <Input id="invite-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="invite-role">Role</Label>
+              <Select value={role} onValueChange={(v) => setRole(v as "member" | "admin")}>
+                <SelectTrigger id="invite-role" className="w-full sm:w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="member">Member</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button type="submit" disabled={busy}>
+              <UserPlus /> Invite
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {loading && !data ? <Spinner /> : null}
-      <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
-        {data?.members.map((m) => (
-          <li key={m.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="truncate font-medium">{m.name ?? m.email}</span>
-                {m.role === "admin" ? <Badge tone="brand">Admin</Badge> : null}
-                <Badge tone={m.status === "active" ? "green" : m.status === "invited" ? "amber" : "red"}>{m.status}</Badge>
-              </div>
-              <div className="truncate text-sm text-slate-500">{m.email}</div>
-              <div className="text-xs text-slate-500">
-                Quota {formatBytes(m.quotaBytes)} · {m.lastLoginAt ? `last sign-in ${formatDate(m.lastLoginAt)}` : "never signed in"}
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="flex items-center gap-2 text-sm">
-                Quota (GB)
-                <Input
-                  type="number"
-                  min={0}
-                  step={1}
-                  defaultValue={Math.round(m.quotaBytes / GB)}
-                  className="w-20"
-                  aria-label={`Quota in GB for ${m.email}`}
-                  onBlur={(e) => {
-                    const gb = Number(e.target.value);
-                    if (Number.isFinite(gb) && gb >= 0 && Math.round(gb * GB) !== m.quotaBytes) void patch(m, { quotaBytes: Math.round(gb * GB) });
-                  }}
-                />
-              </label>
-              <select
-                aria-label={`Role for ${m.email}`}
-                value={m.role}
-                onChange={(e) => void patch(m, { role: e.target.value })}
-                className="h-10 rounded-lg border border-slate-300 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-              >
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
-              </select>
-              <label className="flex items-center gap-2 text-sm">
-                <Switch
-                  checked={m.status !== "disabled"}
-                  disabled={m.id === me.user.id}
-                  onCheckedChange={(on) => void patch(m, { status: on ? "active" : "disabled" })}
-                  aria-label={`Access for ${m.email}`}
-                />
-                Access
-              </label>
-            </div>
-          </li>
-        ))}
-      </ul>
+      {data ? (
+        <Card className="py-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Member</TableHead>
+                <TableHead className="hidden lg:table-cell">Last sign-in</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Quota</TableHead>
+                <TableHead className="text-right">Access</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.members.map((m) => (
+                <TableRow key={m.id}>
+                  <TableCell className="max-w-64">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="size-8">
+                        <AvatarFallback className="text-xs">{(m.name ?? m.email).slice(0, 1).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate font-medium">{m.name ?? m.email}</span>
+                          <Badge variant={m.status === "active" ? "secondary" : m.status === "invited" ? "outline" : "destructive"}>{m.status}</Badge>
+                        </div>
+                        <div className="truncate text-xs text-muted-foreground">{m.email}</div>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="hidden text-muted-foreground lg:table-cell">{m.lastLoginAt ? formatDate(m.lastLoginAt) : "Never"}</TableCell>
+                  <TableCell>
+                    <Select value={m.role} onValueChange={(v) => void patch(m, { role: v })}>
+                      <SelectTrigger size="sm" aria-label={`Role for ${m.email}`} className="w-28">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="member">Member</SelectItem>
+                        <SelectItem value="admin">Admin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell>
+                    <Select value={String(Math.round(m.quotaBytes / GB))} onValueChange={(v) => void patch(m, { quotaBytes: Number(v) * GB })}>
+                      <SelectTrigger size="sm" aria-label={`Quota for ${m.email}`} className="w-28">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {quotaOptions(m.quotaBytes).map((gb) => (
+                          <SelectItem key={gb} value={String(gb)}>
+                            {formatBytes(gb * GB)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Switch
+                      checked={m.status !== "disabled"}
+                      disabled={m.id === me.user.id}
+                      onCheckedChange={(on) => void patch(m, { status: on ? "active" : "disabled" })}
+                      aria-label={`Access for ${m.email}`}
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      ) : null}
     </div>
   );
 }
@@ -152,16 +190,15 @@ function StorageTab() {
       setChecking(null);
     }
   };
-
   const current = data?.targets.find((t) => t.isDefault);
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-brand-500/40 bg-brand-50 p-4 text-sm dark:bg-brand-800/20" role="status">
+    <div className="grid gap-4">
+      <div role="status" className="rounded-lg border border-primary/40 bg-primary/10 p-4 text-sm">
         {current ? (
           <>
-            New uploads go to <strong>{current.name}</strong> ({current.bucket}). Switching affects only uploads started after the switch;
-            existing files keep their storage.
+            New uploads go to <strong>{current.name}</strong> ({current.bucket}). Switching affects only uploads started after the switch; existing
+            files keep their storage.
           </>
         ) : (
           <>No storage is receiving new files yet. Add an R2 target below.</>
@@ -170,112 +207,114 @@ function StorageTab() {
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {loading && !data ? <Spinner /> : null}
       {data && !data.targets.length ? <EmptyState icon={<Database />} title="No storage targets" /> : null}
-      <ul className="space-y-3">
-        {data?.targets.map((t) => (
-          <li key={t.id} className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-              <div className="min-w-0 flex-1 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{t.name}</span>
-                  {t.isDefault ? (
-                    <Badge tone="brand">
-                      <Star className="size-3" /> Receiving new files
-                    </Badge>
-                  ) : null}
-                  <Badge tone={t.acceptingUploads ? "green" : "slate"}>{t.acceptingUploads ? "Accepting uploads" : "Read-only"}</Badge>
-                  {t.lastCheckOk === true ? (
-                    <Badge tone="green">
-                      <CheckCircle2 className="size-3" /> Healthy
-                    </Badge>
-                  ) : t.lastCheckOk === false ? (
-                    <Badge tone="red">
-                      <CircleAlert className="size-3" /> Check failed
-                    </Badge>
-                  ) : null}
-                  {!t.credentialsPresent ? <Badge tone="red">Secrets missing</Badge> : null}
-                </div>
-                <div className="text-sm break-all text-slate-500">
-                  Bucket <code>{t.bucket}</code> · account <code>{t.accountId}</code> · secrets <code>R2_{t.credentialRef}_*</code>
-                </div>
-                <div className="text-xs text-slate-500">
-                  {t.references.files} files · {t.references.uploadSessions} upload sessions
-                  {t.lastCheckAt ? ` · checked ${formatDate(t.lastCheckAt)}: ${t.lastCheckMessage ?? ""}` : ""}
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button variant="outline" size="sm" disabled={checking === t.id} onClick={() => void check(t)}>
-                  <RefreshCw className={checking === t.id ? "animate-spin" : ""} /> Check
-                </Button>
-                {!t.isDefault ? (
-                  <Button
-                    size="sm"
-                    disabled={!t.acceptingUploads}
-                    onClick={() =>
-                      void call(() => api("/api/admin/storage-default", { method: "PUT", body: { storageId: t.id } }), `New uploads now go to ${t.name}`)
-                    }
-                  >
-                    <Star /> Make default
-                  </Button>
-                ) : null}
-                <label className="flex items-center gap-2 text-sm">
-                  <Switch
-                    checked={t.acceptingUploads}
-                    disabled={t.isDefault}
-                    aria-label={`Accept new uploads on ${t.name}`}
-                    onCheckedChange={(on) => void call(() => api(`/api/admin/storage/${t.id}`, { method: "PATCH", body: { acceptingUploads: on } }))}
-                  />
-                  Accept
-                </label>
-                {!t.isDefault && t.references.files === 0 && t.references.uploadSessions === 0 ? (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    aria-label={`Delete ${t.name}`}
-                    onClick={() => void call(() => api(`/api/admin/storage/${t.id}`, { method: "DELETE" }), `Removed ${t.name}`)}
-                  >
-                    <Trash2 />
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-          </li>
-        ))}
-      </ul>
+      {data?.targets.map((t) => (
+        <Card key={t.id} className="gap-3">
+          <CardHeader>
+            <CardTitle className="flex flex-wrap items-center gap-2">
+              {t.name}
+              {t.isDefault ? (
+                <Badge>
+                  <Star /> Receiving new files
+                </Badge>
+              ) : null}
+              <Badge variant={t.acceptingUploads ? "secondary" : "outline"}>{t.acceptingUploads ? "Accepting uploads" : "Read-only"}</Badge>
+              {t.lastCheckOk === true ? (
+                <Badge variant="secondary" className="text-success">
+                  <CheckCircle2 /> Healthy
+                </Badge>
+              ) : t.lastCheckOk === false ? (
+                <Badge variant="destructive">
+                  <CircleAlert /> Check failed
+                </Badge>
+              ) : null}
+              {!t.credentialsPresent ? <Badge variant="destructive">Secrets missing</Badge> : null}
+            </CardTitle>
+            <CardDescription className="break-all">
+              Bucket <code>{t.bucket}</code> · account <code>{t.accountId}</code> · secrets <code>R2_{t.credentialRef}_*</code>
+              <br />
+              {t.references.files} files · {t.references.uploadSessions} upload sessions
+              {t.lastCheckAt ? ` · checked ${formatDate(t.lastCheckAt)}: ${t.lastCheckMessage ?? ""}` : ""}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" disabled={checking === t.id} onClick={() => void check(t)}>
+              <RefreshCw className={checking === t.id ? "animate-spin" : ""} /> Check
+            </Button>
+            {!t.isDefault ? (
+              <Button
+                size="sm"
+                disabled={!t.acceptingUploads}
+                onClick={() => void call(() => api("/api/admin/storage-default", { method: "PUT", body: { storageId: t.id } }), `New uploads now go to ${t.name}`)}
+              >
+                <Star /> Make default
+              </Button>
+            ) : null}
+            <Label className="ml-1 flex items-center gap-2 font-normal">
+              <Switch
+                checked={t.acceptingUploads}
+                disabled={t.isDefault}
+                aria-label={`Accept new uploads on ${t.name}`}
+                onCheckedChange={(on) => void call(() => api(`/api/admin/storage/${t.id}`, { method: "PATCH", body: { acceptingUploads: on } }))}
+              />
+              Accept uploads
+            </Label>
+            {!t.isDefault && t.references.files === 0 && t.references.uploadSessions === 0 ? (
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                className="ml-auto"
+                aria-label={`Delete ${t.name}`}
+                onClick={() => void call(() => api(`/api/admin/storage/${t.id}`, { method: "DELETE" }), `Removed ${t.name}`)}
+              >
+                <Trash2 />
+              </Button>
+            ) : null}
+          </CardContent>
+        </Card>
+      ))}
 
-      <form
-        className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setAdding(true);
-          await call(() => api("/api/admin/storage", { method: "POST", body: form }), "Storage target added");
-          setForm({ name: "", accountId: "", bucket: "", credentialRef: "" });
-          setAdding(false);
-        }}
-      >
-        <h3 className="font-semibold">Add R2 storage target</h3>
-        <p className="text-sm text-slate-500">
-          Create a bucket-scoped R2 API token (Object Read &amp; Write) in the target Cloudflare account, then set it as Worker Secrets{" "}
-          <code>R2_&lt;REF&gt;_ACCESS_KEY_ID</code> and <code>R2_&lt;REF&gt;_SECRET_ACCESS_KEY</code>. Secrets never go through this form.
-        </p>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {(
-            [
-              ["name", "Display name", "Main R2"],
-              ["accountId", "Cloudflare account ID", "32 hex characters"],
-              ["bucket", "Bucket name", "filenest-files"],
-              ["credentialRef", "Credential ref", "MAIN"],
-            ] as const
-          ).map(([k, label, ph]) => (
-            <div key={k} className="space-y-1">
-              <Label htmlFor={`st-${k}`}>{label}</Label>
-              <Input id={`st-${k}`} required placeholder={ph} value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} />
+      <Card>
+        <CardHeader>
+          <CardTitle>Add R2 storage target</CardTitle>
+          <CardDescription>
+            Create a bucket-scoped R2 API token (Object Read &amp; Write) in the target Cloudflare account, then set Worker Secrets{" "}
+            <code>R2_&lt;REF&gt;_ACCESS_KEY_ID</code> and <code>R2_&lt;REF&gt;_SECRET_ACCESS_KEY</code>. Secrets never go through this form.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            className="grid gap-4"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setAdding(true);
+              await call(() => api("/api/admin/storage", { method: "POST", body: form }), "Storage target added");
+              setForm({ name: "", accountId: "", bucket: "", credentialRef: "" });
+              setAdding(false);
+            }}
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              {(
+                [
+                  ["name", "Display name", "Main R2"],
+                  ["accountId", "Cloudflare account ID", "32 hex characters"],
+                  ["bucket", "Bucket name", "filenest-files"],
+                  ["credentialRef", "Credential ref", "MAIN"],
+                ] as const
+              ).map(([k, label, ph]) => (
+                <div key={k} className="grid gap-2">
+                  <Label htmlFor={`st-${k}`}>{label}</Label>
+                  <Input id={`st-${k}`} required placeholder={ph} value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        <Button type="submit" disabled={adding}>
-          <Plus /> Add target
-        </Button>
-      </form>
+            <div>
+              <Button type="submit" disabled={adding}>
+                <Plus /> Add target
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -286,49 +325,65 @@ function AuditTab() {
     <div>
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {loading && !data ? <Spinner /> : null}
-      <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white text-sm dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
-        {data?.events.map((e) => (
-          <li key={e.id} className="grid gap-1 p-3 sm:grid-cols-[12rem_14rem_1fr]">
-            <span className="text-slate-500">{formatDate(e.createdAt)}</span>
-            <code className="text-brand-800 dark:text-brand-100">{e.action}</code>
-            <span className="break-all text-slate-600 dark:text-slate-300">
-              {e.resourceType} {e.resourceId} {e.metadata ? `· ${e.metadata}` : ""}
-            </span>
-          </li>
-        ))}
-        {data && !data.events.length ? <li className="p-4 text-slate-500">No events yet.</li> : null}
-      </ul>
+      {data ? (
+        <Card className="py-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-48">When</TableHead>
+                <TableHead>Action</TableHead>
+                <TableHead>Resource</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.events.map((e) => (
+                <TableRow key={e.id}>
+                  <TableCell className="text-muted-foreground">{formatDate(e.createdAt)}</TableCell>
+                  <TableCell>
+                    <code className="text-primary">{e.action}</code>
+                  </TableCell>
+                  <TableCell className="max-w-md truncate text-muted-foreground" title={`${e.resourceType} ${e.resourceId} ${e.metadata ?? ""}`}>
+                    {e.resourceType} {e.resourceId} {e.metadata ? `· ${e.metadata}` : ""}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!data.events.length ? (
+                <TableRow>
+                  <TableCell colSpan={3} className="text-muted-foreground">
+                    No events yet.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </TableBody>
+          </Table>
+        </Card>
+      ) : null}
     </div>
   );
 }
 
 export function AdminPage() {
-  const tab = "px-4 min-h-11 text-sm font-medium border-b-2 border-transparent data-[state=active]:border-brand-700 data-[state=active]:text-brand-800 dark:data-[state=active]:text-brand-100";
   return (
-    <div className="mx-auto max-w-5xl px-4 py-4 pb-24 sm:px-6">
-      <h1 className="mb-3 text-lg font-semibold">Admin</h1>
-      <Tabs.Root defaultValue="members">
-        <Tabs.List aria-label="Admin sections" className="mb-4 flex gap-1 border-b border-slate-200 dark:border-slate-800">
-          <Tabs.Trigger value="members" className={tab}>
-            Members
-          </Tabs.Trigger>
-          <Tabs.Trigger value="storage" className={tab}>
-            Storage
-          </Tabs.Trigger>
-          <Tabs.Trigger value="audit" className={tab}>
-            Audit log
-          </Tabs.Trigger>
-        </Tabs.List>
-        <Tabs.Content value="members">
-          <MembersTab />
-        </Tabs.Content>
-        <Tabs.Content value="storage">
-          <StorageTab />
-        </Tabs.Content>
-        <Tabs.Content value="audit">
-          <AuditTab />
-        </Tabs.Content>
-      </Tabs.Root>
+    <div className="mx-auto max-w-5xl pb-24">
+      <PageHeader title="Admin" description="Members, storage and audit log." />
+      <div className="px-4 sm:px-6">
+        <Tabs defaultValue="members">
+          <TabsList aria-label="Admin sections">
+            <TabsTrigger value="members">Members</TabsTrigger>
+            <TabsTrigger value="storage">Storage</TabsTrigger>
+            <TabsTrigger value="audit">Audit log</TabsTrigger>
+          </TabsList>
+          <TabsContent value="members" className="mt-4">
+            <MembersTab />
+          </TabsContent>
+          <TabsContent value="storage" className="mt-4">
+            <StorageTab />
+          </TabsContent>
+          <TabsContent value="audit" className="mt-4">
+            <AuditTab />
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   );
 }

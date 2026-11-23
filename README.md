@@ -14,6 +14,7 @@ Self-hosted file manager for you and your team, running entirely on **your own C
 - **AI assistants via MCP**: a local MCP server lets Claude Code, Claude Desktop and other MCP clients download files into a working folder, process them with local tools (e.g. ffmpeg), and upload results back.
 - Several R2 buckets, even in **different Cloudflare accounts**. The Admin chooses which one receives new uploads, without redeploying.
 - Installable PWA. Only the app shell is cached; files and data are never stored offline.
+- Light, Dark or System theme; shadcn/ui interface with a collapsible sidebar, ⌘K search, list/grid views, sorting and multi-select.
 
 ## Architecture
 

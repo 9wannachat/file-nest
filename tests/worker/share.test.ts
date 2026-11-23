@@ -80,3 +80,26 @@ describe("public share links", () => {
     expect(JSON.stringify(rows)).not.toContain(token);
   });
 });
+
+describe("share page theme", () => {
+  it("follows the fn_theme cookie and ignores anything but light/dark", async () => {
+    const path = await makeLink();
+    const html = async (cookie?: string) => (await t.call(path, cookie ? { headers: { Cookie: cookie } } : {})).text();
+    expect(await html("fn_theme=dark")).toContain('<html lang="en" class="dark">');
+    expect(await html("fn_theme=light")).toContain('<html lang="en" class="light">');
+    expect(await html()).toContain('<html lang="en">');
+    const evil = await html('fn_theme="><script>alert(1)</script>');
+    expect(evil).toContain('<html lang="en">');
+    expect(evil).not.toContain("<script>alert(1)");
+  });
+});
+
+describe("/api/me usage", () => {
+  it("reports usedBytes for the caller only", async () => {
+    const me = (await (await t.call("/api/me", { as: alice })).json()) as { user: { usedBytes: number } };
+    expect(me.user.usedBytes).toBe("%PDF-1.7\nhello world".length);
+    const bob = await login(await makeUser());
+    const b = (await (await t.call("/api/me", { as: bob })).json()) as { user: { usedBytes: number } };
+    expect(b.user.usedBytes).toBe(0);
+  });
+});

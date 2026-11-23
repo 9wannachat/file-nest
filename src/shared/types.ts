@@ -4,7 +4,8 @@ export type Role = "admin" | "member";
 export type MemberStatus = "invited" | "active" | "disabled";
 
 export interface Me {
-  user: { id: string; email: string; name: string | null; role: Role; quotaBytes: number };
+  user: { id: string; email: string; name: string | null; role: Role; quotaBytes: number; usedBytes: number };
+  auth?: "session" | "token";
   csrfToken: string;
   limits: { maxUploadBytes: number };
 }
