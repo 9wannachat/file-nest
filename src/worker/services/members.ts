@@ -34,11 +34,18 @@ export async function resolveLogin(
   const bySub = await db.select().from(users).where(eq(users.googleSub, id.sub)).get();
   if (bySub) {
     if (bySub.status === "disabled") return { ok: false, reason: "disabled" };
-    await db
-      .update(users)
-      .set({ lastLoginAt: now, status: "active", email: id.email, name: id.name ?? bySub.name, updatedAt: now })
-      .where(eq(users.id, bySub.id));
-    return { ok: true, user: { ...bySub, status: "active", lastLoginAt: now, email: id.email } };
+    let email = id.email;
+    try {
+      await db
+        .update(users)
+        .set({ lastLoginAt: now, status: "active", email, name: id.name ?? bySub.name, updatedAt: now })
+        .where(eq(users.id, bySub.id));
+    } catch {
+      // The new Google email is already on another row (e.g. an invite): keep the old one.
+      email = bySub.email;
+      await db.update(users).set({ lastLoginAt: now, status: "active", updatedAt: now }).where(eq(users.id, bySub.id));
+    }
+    return { ok: true, user: { ...bySub, status: "active", lastLoginAt: now, email } };
   }
 
   const byEmail = await db.select().from(users).where(eq(users.email, id.email)).get();

@@ -112,3 +112,16 @@ describe("admin API", () => {
     }
   });
 });
+
+describe("disabled owner", () => {
+  it("shared members lose access when the owner is disabled", async () => {
+    await t.call(`/api/files/${fileId}/sharing/members`, { method: "PUT", as: alice, body: t.json({ userIds: [bob.user.id] }) });
+    expect((await t.call(`/api/files/${fileId}/download`, { as: bob })).status).toBe(200);
+    await t.call(`/api/admin/members/${alice.user.id}`, { method: "PATCH", as: admin, body: t.json({ status: "disabled" }) });
+    expect((await t.call(`/api/files/${fileId}/download`, { as: bob })).status).toBe(404);
+    const shared = (await (await t.call("/api/shared", { as: bob })).json()) as { files: unknown[] };
+    expect(shared.files).toHaveLength(0);
+    const found = (await (await t.call("/api/search?q=secret", { as: bob })).json()) as { files: unknown[] };
+    expect(found.files).toHaveLength(0);
+  });
+});

@@ -142,3 +142,12 @@ describe("sessions, CSRF and origin", () => {
     expect((await t.call("/auth/dev-login?email=admin@example.test")).status).toBe(404);
   });
 });
+
+describe("email changes", () => {
+  it("login survives a Google email that collides with an invite", async () => {
+    await makeUser({ email: "old@example.test", googleSub: "g-chg" });
+    await makeUser({ email: "new@example.test", status: "invited", googleSub: null });
+    const { cb } = await oidcFlow((nonce) => ({ sub: "g-chg", email: "new@example.test", email_verified: true, nonce }));
+    expect(cb.headers.get("Location")).toBe("/folders/abc");
+  });
+});

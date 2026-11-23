@@ -123,6 +123,7 @@ export async function listShared(db: Db, userId: string) {
     and(
       isNull(files.trashedAt),
       sql`EXISTS (SELECT 1 FROM file_shares s WHERE s.file_id = ${files.id} AND s.user_id = ${userId})`,
+      sql`${users.status} <> 'disabled'`,
     ),
   );
 }
@@ -138,7 +139,7 @@ export async function search(db: Db, userId: string, q: string) {
     and(
       isNull(files.trashedAt),
       sql`lower(${files.name}) LIKE ${like} ESCAPE '\\'`,
-      sql`(${files.ownerId} = ${userId} OR EXISTS (SELECT 1 FROM file_shares s WHERE s.file_id = ${files.id} AND s.user_id = ${userId}))`,
+      sql`(${files.ownerId} = ${userId} OR (EXISTS (SELECT 1 FROM file_shares s WHERE s.file_id = ${files.id} AND s.user_id = ${userId}) AND ${users.status} <> 'disabled'))`,
     ),
     200,
   );
