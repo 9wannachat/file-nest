@@ -1,4 +1,4 @@
-import { Download, FolderOpen, HardDrive, LogOut, Menu, RefreshCw, Search, Share2, Shield, Trash2, WifiOff, X } from "lucide-react";
+import { Download, FolderOpen, HardDrive, KeyRound, LogOut, Menu, RefreshCw, Search, Share2, Shield, Trash2, WifiOff, X } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { NavLink, useLocation, useNavigate, useSearchParams } from "react-router";
 import { useAuth, useMe } from "@/auth";
@@ -118,6 +118,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { logout } = useAuth();
   const [navOpen, setNavOpen] = useState(false);
   const loc = useLocation();
+  const navigate = useNavigate();
   useEffect(() => setNavOpen(false), [loc.pathname]);
 
   const nav = (
@@ -197,6 +198,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <div className="font-medium">{me.user.name ?? me.user.email}</div>
                   <div className="text-xs text-slate-500">{me.user.email}</div>
                 </div>
+                <DropdownMenuItem onSelect={() => navigate("/settings")}>
+                  <KeyRound /> API tokens
+                </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => void logout()}>
                   <LogOut /> Sign out
                 </DropdownMenuItem>

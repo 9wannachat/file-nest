@@ -108,7 +108,37 @@ export const shareLinks = sqliteTable("share_links", {
   createdAt: integer("created_at").notNull(),
   revokedAt: integer("revoked_at"),
   revokedBy: text("revoked_by"),
+  passwordHash: text("password_hash"),
+  passwordSalt: text("password_salt"),
+  passwordVersion: integer("password_version").notNull(),
 });
+
+export const shareUnlockAttempts = sqliteTable(
+  "share_unlock_attempts",
+  {
+    linkId: text("link_id").notNull(),
+    clientKey: text("client_key").notNull(),
+    failedAttempts: integer("failed_attempts").notNull(),
+    lockedUntil: integer("locked_until"),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.linkId, t.clientKey] })],
+);
+
+export const apiTokens = sqliteTable("api_tokens", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  tokenHash: text("token_hash").notNull(),
+  scopes: text("scopes").notNull(),
+  createdAt: integer("created_at").notNull(),
+  lastUsedAt: integer("last_used_at"),
+  expiresAt: integer("expires_at").notNull(),
+  revokedAt: integer("revoked_at"),
+  windowStart: integer("window_start"),
+  windowCount: integer("window_count").notNull(),
+});
+export type ApiToken = typeof apiTokens.$inferSelect;
 
 export type UploadState = "pending" | "finalizing" | "completed" | "failed" | "expired" | "aborted";
 

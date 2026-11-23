@@ -72,3 +72,37 @@ export async function decryptString(keyB64: string, payload: string, aad: string
   );
   return new TextDecoder().decode(pt);
 }
+
+export const PBKDF2_ITERATIONS = 100_000;
+
+/** PBKDF2-SHA256 → "pbkdf2_sha256$<iterations>$<base64url hash>" */
+export async function hashPassword(password: string, saltB64: string, iterations = PBKDF2_ITERATIONS): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: fromBase64(saltB64), iterations }, key, 256);
+  return `pbkdf2_sha256$${iterations}$${base64url(new Uint8Array(bits))}`;
+}
+
+export async function verifyPassword(password: string, saltB64: string, stored: string): Promise<boolean> {
+  const m = /^pbkdf2_sha256\$(\d+)\$([A-Za-z0-9_-]+)$/.exec(stored);
+  if (!m) return false;
+  const iterations = Number(m[1]);
+  if (!Number.isSafeInteger(iterations) || iterations < 10_000 || iterations > 2_000_000) return false;
+  return timingSafeEqual(await hashPassword(password, saltB64, iterations), stored);
+}
+
+/** HMAC-SHA256 with a key derived (HKDF) from APP_ENCRYPTION_KEY for one purpose. */
+async function hmacKey(keyB64: string, purpose: string): Promise<CryptoKey> {
+  const ikm = await crypto.subtle.importKey("raw", fromBase64(keyB64), "HKDF", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(32), info: enc.encode(`filenest:${purpose}`) },
+    ikm,
+    { name: "HMAC", hash: "SHA-256", length: 256 },
+    false,
+    ["sign"],
+  );
+}
+
+export async function hmacSign(keyB64: string, purpose: string, message: string): Promise<string> {
+  const sig = await crypto.subtle.sign("HMAC", await hmacKey(keyB64, purpose), enc.encode(message));
+  return base64url(new Uint8Array(sig));
+}

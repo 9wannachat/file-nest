@@ -1,0 +1,32 @@
+{
+  "name": "@filenest/mcp",
+  "version": "0.1.0-dev",
+  "private": true,
+  "description": "Local MCP server (stdio) that lets AI assistants download FileNest files into a working folder and upload results back.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "filenest-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "~6.0.3",
+    "vitest": "~4.1.12"
+  }
+}

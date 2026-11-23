@@ -10,6 +10,7 @@ import { AdminPage } from "@/pages/AdminPage";
 import { LoginPage, NotAuthorizedPage } from "@/pages/AuthPages";
 import { DrivePage } from "@/pages/DrivePage";
 import { SearchPage, SharedPage, TrashPage } from "@/pages/ListPages";
+import { SettingsPage } from "@/pages/SettingsPage";
 import { UploadProvider } from "@/upload/UploadProvider";
 
 function Protected() {
@@ -51,6 +52,7 @@ function Protected() {
           <Route path="shared" element={<SharedPage />} />
           <Route path="trash" element={<TrashPage />} />
           <Route path="search" element={<SearchPage />} />
+          <Route path="settings" element={<SettingsPage />} />
           <Route path="admin" element={me.user.role === "admin" ? <AdminPage /> : <Navigate to="/" replace />} />
           <Route path="*" element={<EmptyState icon={<WifiOff />} title="Page not found" />} />
         </Routes>

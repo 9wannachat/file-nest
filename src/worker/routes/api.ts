@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { AppEnv } from "../env.ts";
-import { authOf, appOrigin, requireAdmin, requireSameOrigin, requireUser } from "../auth/middleware.ts";
+import { authOf, appOrigin, requireAdmin, requireSameOrigin, requireUser, sessionOf } from "../auth/middleware.ts";
+import * as tokens from "../services/tokens.ts";
 import { fileFor } from "../authz.ts";
 import { serveFile } from "../services/content.ts";
 import * as drive from "../services/drive.ts";
@@ -37,7 +38,8 @@ api.get("/me", (c) => {
   const { user, session } = authOf(c);
   return c.json({
     user: { id: user.id, email: user.email, name: user.name, role: user.role, quotaBytes: user.quotaBytes },
-    csrfToken: session.csrfToken,
+    csrfToken: session?.csrfToken ?? null,
+    auth: session ? "session" : "token",
     limits: { maxUploadBytes: c.get("config").maxUploadBytes },
   });
 });
@@ -117,6 +119,24 @@ api.delete("/files/:id/sharing/link", async (c) => {
   await shares.revokePublicLink(c.get("db"), authOf(c).user, idParam(c), now(c));
   return c.json(await shares.getSharing(c.get("db"), c.env, authOf(c).user, idParam(c), appOrigin(c)));
 });
+api.put("/files/:id/sharing/link/password", async (c) => {
+  const b = await jsonBody(c);
+  await shares.setLinkPassword(c.get("db"), authOf(c).user, idParam(c), b.password, now(c));
+  return c.json(await shares.getSharing(c.get("db"), c.env, authOf(c).user, idParam(c), appOrigin(c)));
+});
+api.delete("/files/:id/sharing/link/password", async (c) => {
+  await shares.setLinkPassword(c.get("db"), authOf(c).user, idParam(c), null, now(c));
+  return c.json(await shares.getSharing(c.get("db"), c.env, authOf(c).user, idParam(c), appOrigin(c)));
+});
+
+// ---- personal access tokens (browser session only; a token cannot mint tokens) ----
+api.get("/tokens", async (c) => c.json({ tokens: await tokens.listTokens(c.get("db"), sessionOf(c).user) }));
+api.post("/tokens", async (c) => {
+  const b = await jsonBody(c);
+  return c.json(await tokens.createToken(c.get("db"), sessionOf(c).user, b, now(c)), 201);
+});
+api.delete("/tokens/:id", async (c) => c.json(await tokens.revokeToken(c.get("db"), sessionOf(c).user, idParam(c), now(c))));
+
 api.get("/members", async (c) =>
   c.json({ members: await members.lookupMembers(c.get("db"), c.req.query("q") ?? "", authOf(c).user.id) }),
 );

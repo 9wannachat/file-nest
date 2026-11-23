@@ -171,6 +171,7 @@ export async function resetDb() {
     "folders",
     "sessions",
     "oauth_states",
+    "api_tokens",
   ]) {
     await d.prepare(`DELETE FROM ${t}`).run();
   }

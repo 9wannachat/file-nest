@@ -1,6 +1,6 @@
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import type * as schema from "./db/schema.ts";
-import type { User, Session } from "./db/schema.ts";
+import type { ApiToken, User, Session } from "./db/schema.ts";
 
 /** Worker bindings and vars. Per-target R2 credentials are dynamic secrets. */
 export interface Env {
@@ -32,7 +32,8 @@ export interface Deps {
   now: () => number;
 }
 
-export type AuthContext = { user: User; session: Session };
+/** Cookie session (browser) XOR personal access token (API/MCP clients). */
+export type AuthContext = { user: User; session: Session; token?: undefined } | { user: User; session?: undefined; token: ApiToken };
 
 export type AppEnv = {
   Bindings: Env;

@@ -1,9 +1,15 @@
-/** Public "anyone with the link" routes. No cookies needed; token re-checked on every request. */
+/**
+ * Public "anyone with the link" routes. The token is re-checked on every request.
+ * Optional password: POST /s/:token/unlock sets an HMAC-signed cookie scoped to
+ * Path=/s/<token>, bound to the link id + password version, valid 12 h.
+ */
 import { Hono, type Context } from "hono";
+import { getCookie, setCookie } from "hono/cookie";
 import type { AppEnv } from "../env.ts";
 import { HttpError } from "../lib/errors.ts";
 import { serveFile } from "../services/content.ts";
-import { fileForToken } from "../services/shares.ts";
+import { attemptUnlock, isUnlocked, linkForToken, makeUnlockCookie, UNLOCK_TTL_MS, unlockClientKey } from "../services/shares.ts";
+import { appOrigin } from "../auth/middleware.ts";
 import { storageCtx } from "./util.ts";
 
 export const shareRoutes = new Hono<AppEnv>();
@@ -31,7 +37,7 @@ function formatBytes(n: number): string {
 }
 
 const PAGE_CSP =
-  "default-src 'none'; img-src 'self'; media-src 'self'; frame-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+  "default-src 'none'; img-src 'self'; media-src 'self'; frame-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
 const STYLE = `
 *{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;background:#f8fafc;color:#0f172a}
@@ -42,9 +48,10 @@ h1{font-size:1.15rem;margin:0 0 .25rem;word-break:break-word}.meta{color:#64748b
 .preview{margin:1rem 0;background:#0f172a0d;border-radius:8px;overflow:hidden;display:flex;justify-content:center}
 .preview img,.preview video{max-width:100%;max-height:75vh;display:block}.preview iframe{width:100%;height:75vh;border:0}
 .preview audio{width:100%;margin:1rem}
-a.btn{display:inline-flex;align-items:center;min-height:44px;padding:0 1.1rem;border-radius:8px;background:#0f766e;color:#fff;text-decoration:none;font-weight:600}
-a.btn:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}
-@media (prefers-color-scheme:dark){body{background:#0b1220;color:#e2e8f0}header,.card{background:#111a2e;border-color:#1e293b}.meta{color:#94a3b8}}
+.btn{display:inline-flex;align-items:center;min-height:44px;padding:0 1.1rem;border-radius:8px;background:#0f766e;color:#fff;text-decoration:none;font-weight:600}
+.btn:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}
+.err{color:#b91c1c;font-weight:600}
+@media (prefers-color-scheme:dark){.err{color:#fca5a5}body{background:#0b1220;color:#e2e8f0}header,.card{background:#111a2e;border-color:#1e293b}.meta{color:#94a3b8}}
 `;
 
 function page(title: string, body: string, status = 200) {
@@ -65,19 +72,84 @@ function notAvailable() {
   );
 }
 
+const UNLOCK_COOKIE = "fn_unlock";
+
 async function resolve(c: Context<AppEnv>) {
   try {
-    return await fileForToken(c.get("db"), c.req.param("token") ?? "");
+    return await linkForToken(c.get("db"), c.req.param("token") ?? "");
   } catch (e) {
     if (e instanceof HttpError && e.status === 404) return null;
     throw e;
   }
 }
 
-shareRoutes.get("/:token", async (c) => {
-  const file = await resolve(c);
-  if (!file) return notAvailable();
+async function unlocked(c: Context<AppEnv>, link: Awaited<ReturnType<typeof linkForToken>>["link"]) {
+  return isUnlocked(c.env, link, getCookie(c, UNLOCK_COOKIE), c.get("deps").now());
+}
+
+function passwordPage(base: string, message: string | null, status: number) {
+  // The file name and size stay hidden until the password is accepted.
+  return page(
+    "Password required",
+    `<div class="card"><h1>This file is password protected</h1>
+<p class="meta">Enter the password you received from the person who shared it.</p>
+${message ? `<p role="alert" class="err">${esc(message)}</p>` : ""}
+<form method="post" action="${base}/unlock" style="display:flex;flex-direction:column;gap:.75rem;margin-top:1rem;max-width:22rem">
+<label for="pw" style="font-weight:600">Password</label>
+<input id="pw" name="password" type="password" required autocomplete="current-password" maxlength="512" autofocus
+ style="min-height:44px;padding:0 .75rem;border:1px solid #cbd5e1;border-radius:8px;font:inherit">
+<button class="btn" type="submit" style="border:0;cursor:pointer;font:inherit;font-weight:600">Unlock</button>
+</form></div>`,
+    status,
+  );
+}
+
+shareRoutes.post("/:token/unlock", async (c) => {
+  const found = await resolve(c);
+  if (!found) return notAvailable();
   const base = `/s/${encodeURIComponent(c.req.param("token"))}`;
+  // Same-origin form posts only. Note: with Referrer-Policy: no-referrer browsers
+  // send "Origin: null" on this form post, so Sec-Fetch-Site is the primary signal.
+  const sameSite = c.req.header("Sec-Fetch-Site") === "same-origin" || c.req.header("Origin") === appOrigin(c);
+  if (!sameSite) {
+    return passwordPage(base, "Please submit the form from this page.", 403);
+  }
+  if (!found.link.passwordHash) return c.redirect(base, 303);
+  let password = "";
+  try {
+    const form = await c.req.formData();
+    const v = form.get("password");
+    password = typeof v === "string" ? v : "";
+  } catch {
+    password = "";
+  }
+  const now = c.get("deps").now();
+  const clientKey = await unlockClientKey(found.link.id, c.req.header("CF-Connecting-IP"));
+  const r = await attemptUnlock(c.get("db"), found.link, clientKey, password, now);
+  if (!r.ok) {
+    if (r.reason === "locked") {
+      const res = passwordPage(base, `Too many attempts. Try again in ${Math.ceil(r.retryAfterMs / 60_000)} minute(s).`, 429);
+      res.headers.set("Retry-After", String(Math.ceil(r.retryAfterMs / 1000)));
+      return res;
+    }
+    return passwordPage(base, "Incorrect password.", 401);
+  }
+  setCookie(c, UNLOCK_COOKIE, await makeUnlockCookie(c.env, found.link, now), {
+    httpOnly: true,
+    secure: c.get("config").secureCookies,
+    sameSite: "Strict",
+    path: base,
+    maxAge: UNLOCK_TTL_MS / 1000,
+  });
+  return c.redirect(base, 303);
+});
+
+shareRoutes.get("/:token", async (c) => {
+  const found = await resolve(c);
+  if (!found) return notAvailable();
+  const base = `/s/${encodeURIComponent(c.req.param("token"))}`;
+  if (!(await unlocked(c, found.link))) return passwordPage(base, null, 401);
+  const file = found.file;
   const ct = file.contentType;
   let preview = "";
   if (file.inlineOk) {
@@ -97,8 +169,11 @@ ${preview ? `<div class="preview">${preview}</div>` : `<p class="meta">Preview i
 
 for (const mode of ["preview", "download"] as const) {
   shareRoutes.get(`/:token/${mode}`, async (c) => {
-    const file = await resolve(c);
-    if (!file) return c.json({ error: { code: "not_found", message: "Not found" } }, 404);
-    return serveFile(storageCtx(c), file, c.req.raw, mode, { share: true });
+    const found = await resolve(c);
+    if (!found) return c.json({ error: { code: "not_found", message: "Not found" } }, 404);
+    if (!(await unlocked(c, found.link))) {
+      return c.json({ error: { code: "password_required", message: "Password required" } }, 401);
+    }
+    return serveFile(storageCtx(c), found.file, c.req.raw, mode, { share: true });
   });
 }

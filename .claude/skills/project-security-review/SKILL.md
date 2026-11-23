@@ -17,6 +17,9 @@ Changes in `auth/`, `authz.ts`, `routes/share.ts`, `services/{uploads,content,sh
 - [ ] Upload: size/quota/rate before presign; presign staging only, ≤15 min, signed Content-Type; finalize owner-only, ETag-guarded copy, sniff final; idempotent.
 - [ ] Content: Worker-streamed, our headers only, nosniff, no-store, sandbox CSP, allowlisted inline, safe Content-Disposition, no R2 host anywhere.
 - [ ] Share: 256-bit token, hash lookup per request, revoke immediate, no-referrer, noindex.
+- [ ] API tokens: hashed, scoped, expiring, revocable, rate-limited; endpoint allowlist unchanged or reviewed; cookie+bearer rejected; tokens cannot mint tokens.
+- [ ] Share passwords: PBKDF2 + salt, never logged/audited in clear; unlock cookie bound to link id + version + expiry, path-scoped, Strict; lockout works; file name hidden before unlock.
+- [ ] MCP: workdir sandbox (`..`, absolute, symlink, overwrite), https-only URL (localhost exempt), token from 0600 file.
 - [ ] PWA: app shell only; `/api|/auth|/s` denylisted; no data in Web Storage/IndexedDB/Cache Storage.
 - [ ] Logs/errors redacted; no stack traces to clients.
 - [ ] Public repo: `pnpm scan:secrets`, `git log -p` scan for keys, `.gitignore` covers `.dev.vars`, `.env*`, `wrangler.jsonc`, dumps. If a secret was ever committed: **revoke/rotate first**, then rewrite history.

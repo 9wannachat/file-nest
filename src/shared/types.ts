@@ -50,7 +50,7 @@ export interface Sharing {
   fileId: string;
   visibility: "private" | "public";
   members: { id: string; email: string; name: string | null; grantedAt: number }[];
-  publicLink: { url: string; createdAt: number } | null;
+  publicLink: { url: string; createdAt: number; passwordProtected: boolean } | null;
 }
 
 export interface MemberLite {
@@ -113,4 +113,14 @@ export interface AuditEvent {
 
 export interface ApiErrorBody {
   error: { code: string; message: string; [k: string]: unknown };
+}
+
+export interface ApiTokenInfo {
+  id: string;
+  name: string;
+  scopes: ("files:read" | "files:write")[];
+  createdAt: number;
+  lastUsedAt: number | null;
+  expiresAt: number;
+  revokedAt: number | null;
 }

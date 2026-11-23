@@ -16,6 +16,7 @@ src/worker/         Hono Worker: routes/, services/, auth/, authz.ts, storage/s3
 src/web/            React SPA (Vite, Tailwind v4, Radix/shadcn-style ui/), pwa/, upload/
 src/shared/         API payload types
 src/dev/fake-s3.ts  In-process fake R2 S3 API (tests + local dev only)
+packages/mcp/       Local MCP server (stdio) for AI assistants, uses a personal access token
 migrations/         Hand-written D1 SQL (source of truth); src/worker/db/schema.ts mirrors it
 tests/worker        Vitest in workerd (@cloudflare/vitest-plugin) with real local D1 + fake S3
 tests/web           Vitest + jsdom
@@ -40,6 +41,9 @@ e2e/                Playwright against an isolated local stack (scripts/e2e-serv
 - **Content is streamed by the Worker** (`services/content.ts`): never redirect to R2, never return presigned GETs, never forward R2 headers. HEAD + single byte range, 206/416, `nosniff`, `no-store`, sandbox CSP; HTML/SVG/unknown ⇒ `application/octet-stream` attachment.
 - **Share tokens**: 256-bit random, stored as SHA-256 (+ AES-GCM copy for re-copying the link). Checked against D1 on **every** request.
 - **Sessions**: random token, SHA-256 in D1, `HttpOnly; Secure; SameSite=Lax`, rotated on login; CSRF header + Origin check on every state-changing request.
+- **API tokens (PAT)** `fnpat_…`: SHA-256 in D1, shown once, expiring, revocable, rate-limited. Bearer requests are matched against the allowlist in `auth/middleware.ts#TOKEN_ROUTES` (read/list/download, create folder, upload). Never add sharing, trash/delete, rename/move, admin or token management to it without a plan. Cookie + Bearer together ⇒ 400.
+- **Share passwords**: PBKDF2-SHA256 (100k) + salt; unlock cookie is HMAC(link id, password_version, expiry), `Path=/s/<token>`, `SameSite=Strict`, 12 h; every `/s/*` request re-checks it. Lockout is per (link, client) in `share_unlock_attempts`, reserved atomically before PBKDF2. The unlock form relies on `Sec-Fetch-Site` because the page's `no-referrer` makes browsers send `Origin: null`.
+- **MCP** (`packages/mcp`): local stdio server; all local reads/writes go through `Workdir` (no `..`, no symlink escape, no silent overwrite).
 - **Logs** go through `lib/log.ts` (redaction). Never log tokens, cookies, presigned URLs or secrets.
 - **PWA** caches the app shell only; `/api`, `/auth`, `/s` are network-only. No user data in Cache Storage / IndexedDB / Web Storage.
 - **D1**: parameterized queries only (Drizzle / `sql` template). ≤100 bound params per statement — prefer subqueries over large `IN (...)` lists. Use `atomicBatch` for multi-statement atomic writes mixing raw SQL.

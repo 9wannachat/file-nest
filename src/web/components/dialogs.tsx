@@ -1,4 +1,4 @@
-import { ChevronRight, Copy, Download, Folder, Globe, Home, Link2Off, Lock, UserPlus, X } from "lucide-react";
+import { ChevronRight, Copy, Download, Eye, EyeOff, Folder, Globe, Home, KeyRound, Link2Off, Lock, UserPlus, X } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import type { FileItem, FolderListing, MemberLite, Sharing } from "@shared/types";
@@ -332,6 +332,14 @@ export function ShareDialog({ file, onClose, onChanged }: { file: FileItem | nul
                     <Globe /> Create public link
                   </Button>
                 )}
+                {data.publicLink ? (
+                  <LinkPasswordControl
+                    fileId={file!.id}
+                    protectedNow={data.publicLink.passwordProtected}
+                    busy={busy}
+                    onChange={(fn) => void mutate(fn)}
+                  />
+                ) : null}
               </section>
 
               <section aria-labelledby="people" className="space-y-2">
@@ -390,6 +398,91 @@ export function ShareDialog({ file, onClose, onChanged }: { file: FileItem | nul
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Optional password on the public link. The password is never shown again after saving. */
+function LinkPasswordControl({
+  fileId,
+  protectedNow,
+  busy,
+  onChange,
+}: {
+  fileId: string;
+  protectedNow: boolean;
+  busy: boolean;
+  onChange: (fn: () => Promise<Sharing>) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [pw, setPw] = useState("");
+  const [show, setShow] = useState(false);
+  const tooShort = [...pw].length < 8;
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    if (tooShort) return;
+    onChange(async () => {
+      const r = await api<Sharing>(`/api/files/${fileId}/sharing/link/password`, { method: "PUT", body: { password: pw } });
+      setPw("");
+      setEditing(false);
+      toast.success("Password saved. Send it separately from the link.");
+      return r;
+    });
+  };
+  return (
+    <div className="space-y-2 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+      <div className="flex items-center gap-2 text-sm">
+        <KeyRound className="size-4 text-slate-500" aria-hidden />
+        <span className="flex-1 font-medium">{protectedNow ? "Password required to open" : "No password"}</span>
+        <Badge tone={protectedNow ? "amber" : "slate"}>{protectedNow ? "Protected" : "Open"}</Badge>
+      </div>
+      {editing ? (
+        <form onSubmit={save} className="space-y-2">
+          <Label htmlFor="link-password">{protectedNow ? "New password" : "Password"}</Label>
+          <div className="flex gap-2">
+            <Input
+              id="link-password"
+              type={show ? "text" : "password"}
+              autoComplete="new-password"
+              value={pw}
+              maxLength={128}
+              onChange={(e) => setPw(e.target.value)}
+              aria-describedby="link-password-help"
+              autoFocus
+            />
+            <Button type="button" size="icon" variant="outline" aria-label={show ? "Hide password" : "Show password"} onClick={() => setShow(!show)}>
+              {show ? <EyeOff /> : <Eye />}
+            </Button>
+          </div>
+          <p id="link-password-help" className="text-xs text-slate-500">
+            8–128 characters. Viewers must enter it to preview or download. It cannot be shown again.
+          </p>
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" disabled={busy || tooShort}>
+              Save password
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => (setEditing(false), setPw(""))}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => setEditing(true)}>
+            <KeyRound /> {protectedNow ? "Change password" : "Add password"}
+          </Button>
+          {protectedNow ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => onChange(() => api<Sharing>(`/api/files/${fileId}/sharing/link/password`, { method: "DELETE" }))}
+            >
+              Remove password
+            </Button>
+          ) : null}
+        </div>
+      )}
+    </div>
   );
 }
 

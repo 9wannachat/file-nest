@@ -6,7 +6,7 @@
  *  4. drop expired sessions and OAuth states
  */
 import { and, asc, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
-import { files, oauthStates, objectDeletions, uploadSessions } from "../db/schema.ts";
+import { files, oauthStates, objectDeletions, shareUnlockAttempts, uploadSessions } from "../db/schema.ts";
 import { log } from "../lib/log.ts";
 import { purgeExpiredSessions } from "../auth/session.ts";
 import { purgeTrashRoots } from "./drive.ts";
@@ -106,6 +106,7 @@ export async function runCleanup(ctx: StorageCtx) {
   // 4. Housekeeping.
   await purgeExpiredSessions(db, now);
   await db.delete(oauthStates).where(lt(oauthStates.expiresAt, now));
+  await db.delete(shareUnlockAttempts).where(lt(shareUnlockAttempts.updatedAt, now - 2 * 24 * 3600_000));
 
   log.info("cleanup.done", stats);
   return stats;

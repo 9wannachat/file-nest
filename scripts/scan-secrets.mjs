@@ -14,6 +14,7 @@ const RULES = [
   ["encryption key assignment", /APP_ENCRYPTION_KEY\s*[=:]\s*["']?(?!REPLACE_WITH)[A-Za-z0-9+/]{43}=/],
   ["session cookie value", /__Host-fn_session=[A-Za-z0-9_-]{30,}/],
   ["share link token", /\/s\/[A-Za-z0-9_-]{43}\b/],
+  ["FileNest personal access token", /\bfnpat_[A-Za-z0-9_-]{43}\b/],
 ];
 // Deterministic test-only key (bytes 0..31) used by tests and the isolated E2E stack.
 const ALLOW = [/AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=/];

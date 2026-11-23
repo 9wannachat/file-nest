@@ -10,7 +10,8 @@ Self-hosted file manager for you and your team, running entirely on **your own C
 - Google sign-in (OpenID Connect + PKCE), invite-only members, Admin and Member roles
 - Drive: folders, breadcrumb, name search, drag-and-drop upload with per-file progress and retry, rename, move, trash, restore
 - Preview images, video, audio, PDF and text **streamed through the Worker** (Range/seek supported). R2 is never exposed to browsers for reads.
-- Private by default. Share a file with specific members (view and download), or create a revocable public link (`/s/<token>`).
+- Private by default. Share a file with specific members (view and download), or create a revocable public link (`/s/<token>`), optionally protected by a password.
+- **AI assistants via MCP**: a local MCP server lets Claude Code, Claude Desktop and other MCP clients download files into a working folder, process them with local tools (e.g. ffmpeg), and upload results back.
 - Several R2 buckets, even in **different Cloudflare accounts**. The Admin chooses which one receives new uploads, without redeploying.
 - Installable PWA. Only the app shell is cached; files and data are never stored offline.
 
@@ -148,6 +149,53 @@ Open `APP_ORIGIN`, sign in with `BOOTSTRAP_ADMIN_EMAIL`. That account becomes Ad
 4. Click **Make default**. New uploads go to B. Existing files keep reading from A, and uploads that already started keep their original bucket.
 5. To stop new files going to A, turn off **Accept** on A. Its files stay readable. A target that still has files or upload sessions cannot be deleted, and its bucket/account cannot be edited. Add a new target instead.
 
+## AI assistants (MCP)
+
+`packages/mcp` is a **local** MCP server (stdio). It runs on your computer, talks to FileNest with a personal access token, and reads/writes only inside one working folder.
+
+1. In FileNest: account menu → **API tokens** → create a token (choose whether it may upload). Copy it once.
+2. Store it so only you can read it:
+
+```bash
+mkdir -p ~/.config/filenest && pbpaste > ~/.config/filenest/token && chmod 600 ~/.config/filenest/token
+```
+
+3. Build the server:
+
+```bash
+pnpm mcp:build
+```
+
+4. Add it to your MCP client (Claude Desktop `claude_desktop_config.json`, or `.mcp.json` for Claude Code):
+
+```json
+{
+  "mcpServers": {
+    "filenest": {
+      "command": "node",
+      "args": ["/absolute/path/to/file-nest/packages/mcp/dist/index.js"],
+      "env": {
+        "FILENEST_URL": "https://files.example.com",
+        "FILENEST_TOKEN_FILE": "~/.config/filenest/token",
+        "FILENEST_WORKDIR": "~/FileNest-work"
+      }
+    }
+  }
+}
+```
+
+Tools: `list_folder`, `search_files`, `list_shared`, `get_file_info`, `read_file_content` (small text/images inline), `download_file` (resumable, into the working folder), `upload_file` (from the working folder), `create_folder`.
+Example prompt: *“Find interview.mp4 in FileNest, cut 0:10–0:30 with ffmpeg, and upload it as interview-clip.mp4.”*
+
+Safety:
+- Tokens act as you but **cannot** share, delete, trash, rename/move, use admin features or create other tokens. They expire (default 90 days), can be revoked any time, and are rate-limited (600 requests/min).
+- The MCP server refuses paths outside `FILENEST_WORKDIR` (including `..` and symlinks) and never overwrites a local file unless asked. This limits what a prompt-injected instruction can touch on your machine.
+- `FILENEST_URL` must be https (http only for localhost).
+
+## Password-protected links
+
+In the Share dialog, after creating a public link, choose **Add password** (8–128 characters). Viewers then see a password form; the file name, preview and download stay locked until the password is entered. Unlocking lasts 12 hours in that browser. Changing or removing the password, or revoking the link, invalidates earlier unlocks immediately. After 5 wrong attempts from the same client (IP), that client is locked out for 1 minute, doubling up to 15 minutes; other viewers are not affected, and counters reset after a quiet day. Attempts are counted before the password is checked, so parallel requests cannot exceed the limit. Raw IPs are not stored. For public deployments, also add a Cloudflare rate limiting rule for `POST /s/*/unlock`. Send the password through a different channel than the link.
+
 ## PWA
 
 - Served from the app origin (`/manifest.webmanifest`, `/sw.js`). HTTPS is required in production.
@@ -198,6 +246,8 @@ pnpm e2e
 - Public link tokens are 256-bit, stored as a hash (plus an AES-GCM copy so the owner can copy the link again), and checked on every request. Revoking takes effect immediately.
 - Content responses use `X-Content-Type-Options: nosniff`, `Cache-Control: no-store` and a sandboxing CSP. Share routes add `Referrer-Policy: no-referrer`.
 - Workers **invocation logs are off** in `wrangler.example.jsonc` (`observability.logs.invocation_logs: false`, `redact_query_string: true`), because request URLs contain share tokens (`/s/<token>`) and OAuth `code`/`state`. If you turn them on, anyone who can read Workers Logs in your account can collect live share links.
+- Share passwords are hashed with PBKDF2-SHA256 (100,000 iterations). On the Workers **Free** plan (10 ms CPU per request) unlock attempts may exceed the CPU limit; measure on your plan before relying on it.
+- API tokens (`fnpat_…`) are stored as SHA-256 only; `pnpm scan:secrets` flags any token committed by mistake.
 - `GET /auth/login` writes a short-lived row per request (cleaned every 15 min). On a public deployment, add a Cloudflare **rate limiting rule** for `/auth/login` (e.g. 20 requests/min per IP).
 - The app CSP allows `connect-src https://*.r2.cloudflarestorage.com` so the Admin can add R2 targets in other accounts **without redeploying**. If you use fixed accounts, tighten it in `public/_headers` to `https://<account-id>.r2.cloudflarestorage.com`.
 - **Before publishing your fork**, run `pnpm scan:secrets`. It scans tracked files and the full git history. Keep `.dev.vars`, `.env*`, `wrangler.jsonc` and D1 exports out of the repo (they are git-ignored). If a secret was ever committed, **revoke/rotate it first**, then rewrite history.
@@ -215,6 +265,8 @@ pnpm e2e
 | Rename/move keeps the original object key | ✅ local |
 | PWA install and standalone on Chromium; iOS Safari steps; Google Sign-In on devices | 🟡 manifest/SW verified locally; install and devices not yet tested |
 | Offline shows status, no cached file list; no file reads via cache after logout; PWA update waits for uploads | ✅ E2E (offline, cache contents) · update deferral implemented, not E2E-tested |
+| API tokens + MCP: list, inline image, download, path-escape refusal, upload | ✅ local (stdio MCP → Worker → local D1 → fake R2) · 🟡 real Claude Desktop/Code client |
+| Password links: locked page, unlock in a real browser, cookie invalidation, lockout | ✅ local + E2E · 🟡 PBKDF2 CPU time on real Workers |
 | Fresh install from this README with one R2 account | 🟡 not yet run against real Cloudflare |
 
 ## License

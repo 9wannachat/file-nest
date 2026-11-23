@@ -114,6 +114,16 @@ describe("sessions, CSRF and origin", () => {
     expect((await t.call("/api/folders", { method: "POST", as: me, body })).status).toBe(201);
   });
 
+  it("a non-Bearer Authorization header does not bypass the Origin check (logout CSRF)", async () => {
+    const t = setup();
+    const me = await login(await makeUser());
+    const r = await t.call("/auth/logout", { method: "POST", headers: { Cookie: me.cookie, Authorization: "Basic eDp5", Origin: "https://evil.test" } });
+    expect(r.status).toBe(403);
+    expect((await t.call("/api/me", { as: me })).status).toBe(200);
+    const r2 = await t.call("/auth/logout", { method: "POST", headers: { Cookie: me.cookie, Authorization: `Bearer fnpat_${"A".repeat(43)}`, Origin: "https://evil.test" } });
+    expect(r2.status).toBe(403);
+  });
+
   it("logout revokes the session server-side", async () => {
     const t = setup();
     const me = await login(await makeUser());

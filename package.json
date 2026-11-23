@@ -13,10 +13,10 @@
     "dev": "node scripts/dev.mjs",
     "dev:vite": "vite",
     "dev:s3": "node scripts/fake-s3.ts",
-    "build": "vite build",
+    "build": "vite build && pnpm --filter @filenest/mcp build",
     "preview": "vite preview",
-    "typecheck": "tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.web-test.json --noEmit && tsc -p tsconfig.node.json --noEmit",
-    "test": "vitest run --project worker --project web",
+    "typecheck": "tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.web-test.json --noEmit && tsc -p tsconfig.node.json --noEmit && pnpm --filter @filenest/mcp typecheck",
+    "test": "vitest run --project worker --project web && pnpm --filter @filenest/mcp test",
     "test:worker": "vitest run --project worker",
     "test:web": "vitest run --project web",
     "e2e": "playwright test",
@@ -28,7 +28,8 @@
     "cf-typegen": "wrangler types src/worker/worker-configuration.d.ts",
     "setup:local": "node scripts/setup-local.mjs",
     "scan:secrets": "node scripts/scan-secrets.mjs",
-    "check": "pnpm typecheck && pnpm test && pnpm build"
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "mcp:build": "pnpm --filter @filenest/mcp build"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",

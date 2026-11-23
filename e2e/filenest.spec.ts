@@ -79,6 +79,52 @@ test("public link works signed-out, and revoke blocks the old token", async ({ p
   await anon.close();
 });
 
+test("password-protected link: locked page, real-browser unlock, scoped cookie", async ({ page, browser }) => {
+  await devLogin(page);
+  const name = `pw-${Date.now()}.txt`;
+  await upload(page, [{ name, mimeType: "text/plain", buffer: Buffer.from("password content") }]);
+  await page.getByRole("button", { name: `Actions for ${name}` }).click();
+  await page.getByRole("menuitem", { name: "Share" }).click();
+  const dialog = page.getByRole("dialog", { name: `Share “${name}”` });
+  await dialog.getByRole("button", { name: "Create public link" }).click();
+  await dialog.getByRole("button", { name: "Add password" }).click();
+  await dialog.getByLabel("Password", { exact: true }).fill("e2e-secret-pass");
+  await dialog.getByRole("button", { name: "Save password" }).click();
+  await expect(dialog.getByText("Password required to open")).toBeVisible();
+  const url = await dialog.getByLabel("Public link").inputValue();
+
+  const anon = await browser.newContext();
+  const p2 = await anon.newPage();
+  expect((await p2.goto(url))?.status()).toBe(401);
+  await expect(p2.getByText(name)).toHaveCount(0);
+  expect((await p2.request.get(`${url}/download`)).status()).toBe(401);
+  await p2.getByLabel("Password").fill("wrong-password");
+  await p2.getByRole("button", { name: "Unlock" }).click();
+  await expect(p2.getByRole("alert")).toHaveText("Incorrect password.");
+  await p2.getByLabel("Password").fill("e2e-secret-pass");
+  await p2.getByRole("button", { name: "Unlock" }).click();
+  await expect(p2.getByRole("heading", { name })).toBeVisible();
+  await expect(p2.frameLocator("iframe").locator("body")).toContainText("password content");
+  await anon.close();
+});
+
+test("settings: create and revoke an API token", async ({ page, request }) => {
+  await devLogin(page);
+  await page.getByRole("button", { name: /^Account:/ }).click();
+  await page.getByRole("menuitem", { name: "API tokens" }).click();
+  await page.getByRole("textbox", { name: "Name", exact: true }).fill("e2e token");
+  await page.getByRole("button", { name: "Create token" }).click();
+  const tokenBox = page.getByLabel("New token", { exact: true });
+  await expect(tokenBox).toHaveValue(/^fnpat_[A-Za-z0-9_-]{43}$/);
+  const token = await tokenBox.inputValue();
+  await page.getByRole("button", { name: "Done" }).click();
+  // `request` has no browser cookies: token-only, like the MCP server.
+  expect((await request.get("/api/folders/root", { headers: { Authorization: `Bearer ${token}` } })).status()).toBe(200);
+  await page.getByRole("button", { name: "Revoke e2e token" }).click();
+  await expect(page.getByText("Revoked").first()).toBeVisible();
+  expect((await request.get("/api/folders/root", { headers: { Authorization: `Bearer ${token}` } })).status()).toBe(401);
+});
+
 test("offline shows status without cached file lists", async ({ page, context }) => {
   await devLogin(page);
   const name = `offline-${Date.now()}.txt`;
