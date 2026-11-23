@@ -17,6 +17,7 @@ import { api, errorMessage } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import { cn, formatDate } from "@/lib/utils";
 import { useTheme } from "@/theme";
+import { SecurityCard } from "./SecurityCard";
 
 function statusOf(t: ApiTokenInfo): { label: string; variant: "secondary" | "outline" | "destructive" } {
   if (t.revokedAt) return { label: "Revoked", variant: "destructive" };
@@ -102,9 +103,10 @@ export function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-4xl pb-24">
-      <PageHeader title="Settings" description="Appearance and API tokens." />
+      <PageHeader title="Settings" description="Appearance, security and API tokens." />
       <div className="grid gap-4 px-4 sm:px-6">
         <AppearanceCard />
+        <SecurityCard />
 
         <Card>
           <CardHeader>

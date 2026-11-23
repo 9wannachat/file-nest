@@ -48,7 +48,10 @@
     "MAX_UPLOAD_BYTES": "536870912",
     "DEFAULT_QUOTA_BYTES": "10737418240",
     "UPLOAD_RATE_PER_HOUR": "100",
-    "TRASH_RETENTION_DAYS": "30"
+    "TRASH_RETENTION_DAYS": "30",
+    // PBKDF2-SHA256 rounds for member passwords (10000–100000; Workers' WebCrypto
+    // ceiling). 100000 costs roughly 30–60 ms CPU per sign-in: use the Paid plan.
+    "PASSWORD_PBKDF2_ITERATIONS": "100000"
   }
 
   // Secrets (set with `wrangler secret put NAME`):

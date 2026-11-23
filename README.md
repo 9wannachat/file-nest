@@ -7,7 +7,8 @@ Self-hosted file manager for you and your team, running entirely on **your own C
 
 ## Features
 
-- Google sign-in (OpenID Connect + PKCE), invite-only members, Admin and Member roles
+- Sign in with Google (OpenID Connect + PKCE) or email and password, with optional or enforced two-factor authentication (authenticator app + recovery codes)
+- Invitation links, Admin and Member roles, and an Admin Console for members, bans, invitations, public links, settings, storage and audit
 - Drive: folders, breadcrumb, name search, drag-and-drop upload with per-file progress and retry, rename, move, trash, restore
 - Preview images, video, audio, PDF and text **streamed through the Worker** (Range/seek supported). R2 is never exposed to browsers for reads.
 - Private by default. Share a file with specific members (view and download), or create a revocable public link (`/s/<token>`), optionally protected by a password.
@@ -150,6 +151,19 @@ Open `APP_ORIGIN`, sign in with `BOOTSTRAP_ADMIN_EMAIL`. That account becomes Ad
 4. Click **Make default**. New uploads go to B. Existing files keep reading from A, and uploads that already started keep their original bucket.
 5. To stop new files going to A, turn off **Accept** on A. Its files stay readable. A target that still has files or upload sessions cannot be deleted, and its bucket/account cannot be edited. Add a new target instead.
 
+## Accounts, 2FA and the Admin Console
+
+- **Bootstrap:** the first person to sign in with Google as `BOOTSTRAP_ADMIN_EMAIL` becomes Admin.
+- **Invite people:** Admin Console → Invitations → *Create link*. Set role, number of uses and expiry, and optionally one email address. **Email-bound** links can be used with Google or with a password for that address. **Open** links (no email) accept Google sign-in only, so nobody can claim someone else's address with a password. Links are shown only after the Admin confirms it's them.
+- **Passwords:** 10–128 characters, PBKDF2-SHA256 with 100,000 rounds (`PASSWORD_PBKDF2_ITERATIONS`, 10,000–100,000; Workers' WebCrypto is reported to reject more in production). Expect ~30–60 ms CPU per sign-in: use the Workers **Paid** plan. Guessing is limited per account+client (5), per account (30) and per client (30); a stranger cannot lock out the real user, and the same error is returned for unknown, wrong or disabled accounts.
+- **Forgot password:** FileNest does not send email. An Admin opens the member and clicks *Password reset link* (single use, 30 minutes), then sends it through a trusted channel. Resetting signs the member out everywhere and revokes their API tokens. Reset links are refused for Google-only members and for members with 2FA (they can still sign in with their authenticator).
+- **Two-factor authentication:** Settings → Security → *Set up authenticator app*. Ten one-time recovery codes are shown once. The Admin Console can require 2FA for Admins (default) or everyone; affected members must enroll at their next sign-in. An Admin can reset a member's 2FA after verifying who they are.
+- **Admin Console** (`/admin`): Overview, Members (search, role, quota, ban with reason and duration, sign out everywhere, revoke API tokens, reset 2FA, reset link), Invitations, Public links (review and revoke), Settings (registration, sign-in methods, 2FA policy, default quota, max file size, session length, trash retention, public link policy), Storage and Audit log (filter, CSV export).
+- Sensitive actions (ban, role changes, 2FA reset, reset links, settings, storage) ask the Admin to confirm with their authenticator code or password if they signed in more than 10 minutes ago.
+- Admins see usage totals and member metadata, and the names of files that already have **public** links. They never see the names or contents of other members' private files.
+- **Trust note:** because FileNest sends no email, an Admin who resets a member's 2FA *and then* issues a reset link could set that member's password. Both steps need re-authentication, are recorded in the audit log and the member's activity, and sign the member out (so they notice). Only give the Admin role to people you trust with that.
+- Turning on the 2FA requirement applies immediately: members who must use 2FA but haven't set it up can only reach the enrollment screen, and their API tokens stop working until they enroll.
+
 ## AI assistants (MCP)
 
 `packages/mcp` is a **local** MCP server (stdio). It runs on your computer, talks to FileNest with a personal access token, and reads/writes only inside one working folder.
@@ -268,6 +282,7 @@ pnpm e2e
 | Offline shows status, no cached file list; no file reads via cache after logout; PWA update waits for uploads | ✅ E2E (offline, cache contents) · update deferral implemented, not E2E-tested |
 | API tokens + MCP: list, inline image, download, path-escape refusal, upload | ✅ local (stdio MCP → Worker → local D1 → fake R2) · 🟡 real Claude Desktop/Code client |
 | Password links: locked page, unlock in a real browser, cookie invalidation, lockout | ✅ local + E2E · 🟡 PBKDF2 CPU time on real Workers |
+| Password sign-up via invitation, TOTP 2FA (enroll, sign in, recovery codes, replay protection), admin ban/reset/settings | ✅ local + E2E · 🟡 real authenticator apps on phones, PBKDF2 limits/CPU on deployed Workers |
 | Fresh install from this README with one R2 account | 🟡 not yet run against real Cloudflare |
 
 ## License

@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 
 /**
@@ -197,6 +198,100 @@ test("theme: System follows the OS, explicit choice persists, share page matches
   await page.goto("/settings");
   await page.getByRole("radio", { name: "System" }).click();
   await expect(page.locator("html")).not.toHaveClass(/dark/);
+});
+
+function totp(secretB32: string, at = Date.now()): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = 0;
+  let value = 0;
+  const bytes: number[] = [];
+  for (const ch of secretB32.replace(/\s/g, "")) {
+    value = (value << 5) | alphabet.indexOf(ch);
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(at / 30000)));
+  const h = createHmac("sha1", Buffer.from(bytes)).update(counter).digest();
+  const off = h[h.length - 1]! & 15;
+  return String((h.readUInt32BE(off) & 0x7fffffff) % 1_000_000).padStart(6, "0");
+}
+
+test("invite → password sign-up → 2FA → password+TOTP sign-in → admin ban", async ({ page, browser }) => {
+  await devLogin(page);
+  const email = `pw-${Date.now()}@example.test`;
+  await page.goto("/admin/invitations");
+  await page.getByLabel(/^Email \(optional/).fill(email);
+  await page.getByRole("button", { name: "Create link" }).click();
+  const url = await page.getByLabel("New invitation link").inputValue();
+  expect(url).toMatch(/\/invite\/[A-Za-z0-9_-]{43}$/);
+
+  const ctx = await browser.newContext();
+  const p = await ctx.newPage();
+  const password = "e2e-Strong-passphrase-1";
+  await p.goto(url);
+  await expect(p.getByRole("heading", { name: "Join FileNest" })).toBeVisible();
+  await p.getByLabel("Name").fill("E2E Person");
+  await expect(p.getByLabel("Email", { exact: true })).toHaveValue(email); // bound to the invitation
+  await p.getByLabel("Password (10+ characters)").fill(password);
+  await p.getByLabel("Confirm password").fill(password);
+  await p.getByRole("button", { name: "Create account" }).click();
+  await expect(p.getByRole("heading", { name: "My Drive" })).toBeVisible();
+
+  // Enable 2FA from Settings.
+  await p.goto("/settings");
+  await p.getByRole("button", { name: "Set up authenticator app" }).click();
+  const secret = (await p.locator("#mfa-secret").textContent())!.replace(/\s/g, "");
+  await expect(p.getByRole("img", { name: "QR code for your authenticator app" })).toBeVisible();
+  await p.getByLabel("6-digit code").fill(totp(secret));
+  await p.getByRole("button", { name: "Turn on 2FA" }).click();
+  await expect(p.getByRole("list", { name: "Recovery codes" }).getByRole("listitem")).toHaveCount(10);
+  await p.getByRole("button", { name: "I saved them" }).click();
+  await expect(p.getByText("Two-factor authentication").first()).toBeVisible();
+
+  // Sign out, sign back in with password + TOTP (next 30 s window to avoid replay).
+  await p.getByRole("button", { name: /^Account:/ }).click();
+  await p.getByRole("menuitem", { name: "Sign out" }).click();
+  await p.getByLabel("Email", { exact: true }).fill(email);
+  await p.getByLabel("Password", { exact: true }).fill(password);
+  await p.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(p.getByRole("heading", { name: "Two-factor authentication" })).toBeVisible();
+  expect((await p.request.get("/api/me")).status()).toBe(401); // no session before the second factor
+  await p.waitForTimeout(Math.max(0, 30_000 - (Date.now() % 30_000)) + 200);
+  await p.getByLabel("Authentication code").fill(totp(secret));
+  await p.getByRole("button", { name: "Verify" }).click();
+  await expect(p.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible(); // returns to where they signed out
+  expect((await p.request.get("/api/me")).status()).toBe(200);
+
+  // Admin bans the member: their next request is rejected.
+  await page.goto("/admin/members");
+  await page.getByRole("link", { name: new RegExp(email) }).click();
+  await page.getByRole("button", { name: "Ban", exact: true }).click();
+  await page.getByLabel("Reason (shown in the audit log)").fill("e2e test");
+  await page.getByRole("button", { name: "Ban member" }).click();
+  await expect(page.getByText("Banned: e2e test")).toBeVisible();
+  expect((await p.request.get("/api/me")).status()).toBe(401);
+  await ctx.close();
+});
+
+test("admin settings: changes save and apply (password sign-in switch)", async ({ page, browser }) => {
+  await devLogin(page);
+  await page.goto("/admin/settings");
+  await page.getByRole("switch", { name: "Sign in with email and password" }).click();
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByText("All changes saved")).toBeVisible();
+  const anon = await browser.newContext();
+  const p = await anon.newPage();
+  await p.goto("/login");
+  await expect(p.getByRole("link", { name: "Continue with Google" })).toBeVisible();
+  await expect(p.getByRole("form", { name: "Sign in with email" })).toHaveCount(0);
+  await anon.close();
+  await page.getByRole("switch", { name: "Sign in with email and password" }).click();
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByText("All changes saved")).toBeVisible();
 });
 
 test("manifest and installability basics", async ({ request }) => {

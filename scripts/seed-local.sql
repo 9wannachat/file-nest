@@ -5,3 +5,7 @@ VALUES ('00000000-0000-4000-8000-000000000001', 'Local fake R2', '00000000000000
 ON CONFLICT (id) DO NOTHING;
 UPDATE app_settings SET default_storage_id = '00000000-0000-4000-8000-000000000001'
 WHERE id = 1 AND default_storage_id IS NULL;
+-- Local development: 2FA optional so dev-login works without an authenticator.
+-- (Production default is "admins": Admins must enroll at their next sign-in.)
+INSERT INTO system_settings (key, value, updated_at) VALUES ('mfaPolicy', '"optional"', 0)
+ON CONFLICT (key) DO NOTHING;

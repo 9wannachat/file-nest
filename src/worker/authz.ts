@@ -16,8 +16,8 @@ export async function fileFor(db: Db, userId: string, fileId: string, action: Fi
   const access =
     action === "manage"
       ? eq(files.ownerId, userId)
-      : sql`(${files.ownerId} = ${userId} OR (EXISTS (SELECT 1 FROM ${fileShares} s WHERE s.file_id = ${files.id} AND s.user_id = ${userId})
-             AND NOT EXISTS (SELECT 1 FROM users o WHERE o.id = ${files.ownerId} AND o.status = 'disabled')))`;
+      : sql`(${files.ownerId} = ${userId} OR (EXISTS (SELECT 1 FROM ${fileShares} s WHERE s.file_id = "files"."id" AND s.user_id = ${userId})
+             AND NOT EXISTS (SELECT 1 FROM users o WHERE o.id = "files"."owner_id" AND o.status = 'disabled')))`;
   const row = await db.select().from(files).where(and(eq(files.id, fileId), trashCond, access)).get();
   if (!row) throw notFound();
   return row;

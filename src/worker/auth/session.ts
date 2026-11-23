@@ -4,6 +4,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sessions, users, type Session, type User } from "../db/schema.ts";
 import type { AppConfig, AppEnv, Db } from "../env.ts";
 import { randomToken, sha256Hex } from "../lib/crypto.ts";
+import { getSettings } from "../services/settings.ts";
 
 export const SESSION_TTL_MS = 7 * 24 * 3600_000;
 export const SESSION_MAX_MS = 30 * 24 * 3600_000;
@@ -13,7 +14,15 @@ export function sessionCookieName(config: AppConfig) {
   return config.secureCookies ? "__Host-fn_session" : "fn_session";
 }
 
-export async function createSession(db: Db, userId: string, now: number) {
+export interface SessionOptions {
+  authMethod?: "google" | "password" | "dev";
+  userAgent?: string | null;
+  /** Policy requires 2FA but the member has not enrolled yet: only enrollment is allowed. */
+  needsMfaSetup?: boolean;
+  ttlMs?: number;
+}
+
+export async function createSession(db: Db, userId: string, now: number, opts: SessionOptions = {}) {
   const token = randomToken(32);
   const session: Session = {
     id: crypto.randomUUID(),
@@ -21,8 +30,13 @@ export async function createSession(db: Db, userId: string, now: number) {
     csrfToken: randomToken(24),
     userId,
     createdAt: now,
-    expiresAt: now + SESSION_TTL_MS,
+    expiresAt: now + (opts.ttlMs ?? SESSION_TTL_MS),
     lastSeenAt: now,
+    // A fresh sign-in counts as a recent re-authentication.
+    reauthAt: now,
+    needsMfaSetup: opts.needsMfaSetup ?? false,
+    authMethod: opts.authMethod ?? null,
+    userAgent: opts.userAgent ? opts.userAgent.slice(0, 200) : null,
   };
   await db.insert(sessions).values(session);
   return { token, session };
@@ -65,7 +79,8 @@ export async function loadSession(c: Context<AppEnv>): Promise<{ user: User; ses
     return null;
   }
   if (now - row.session.lastSeenAt > REFRESH_AFTER_MS) {
-    const expiresAt = Math.min(now + SESSION_TTL_MS, row.session.createdAt + SESSION_MAX_MS);
+    const ttl = (await getSettings(db, c.get("config"))).sessionTtlDays * 24 * 3600_000;
+    const expiresAt = Math.min(now + ttl, row.session.createdAt + SESSION_MAX_MS);
     await db.update(sessions).set({ lastSeenAt: now, expiresAt }).where(eq(sessions.id, row.session.id));
     row.session.expiresAt = expiresAt;
     row.session.lastSeenAt = now;

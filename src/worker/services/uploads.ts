@@ -23,6 +23,7 @@ import { log } from "../lib/log.ts";
 import { StorageError } from "../storage/s3.ts";
 import { fileDtoFor, isUniqueViolation } from "./drive.ts";
 import { bucketById, targetForNewUpload, type StorageCtx } from "./storage.ts";
+import { getSettings } from "./settings.ts";
 
 export const PUT_URL_TTL_S = 15 * 60;
 export const SESSION_TTL_MS = 2 * 3600_000;
@@ -41,10 +42,9 @@ export async function createUpload(
   const name = cleanName(input.name);
   const size = typeof input.size === "number" ? input.size : NaN;
   if (!Number.isSafeInteger(size) || size < 0) throw badRequest("invalid_size", "Invalid file size");
-  if (size > config.maxUploadBytes) {
-    throw new HttpError(413, "file_too_large", `File exceeds the ${config.maxUploadBytes} byte limit`, {
-      maxBytes: config.maxUploadBytes,
-    });
+  const maxUploadBytes = (await getSettings(db, config)).maxUploadBytes;
+  if (size > maxUploadBytes) {
+    throw new HttpError(413, "file_too_large", `File exceeds the ${maxUploadBytes} byte limit`, { maxBytes: maxUploadBytes });
   }
   const declaredMime = normalizeMime(typeof input.mime === "string" ? input.mime : null);
   const folderId = await writableFolderId(db, user.id, input.folderId as string | null | undefined);
@@ -101,7 +101,7 @@ export async function createUpload(
     putUrl,
     putHeaders: { "Content-Type": contentType },
     expiresAt: now + PUT_URL_TTL_S * 1000,
-    maxBytes: config.maxUploadBytes,
+    maxBytes: maxUploadBytes,
   };
 }
 

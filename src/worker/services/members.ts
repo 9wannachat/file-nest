@@ -1,10 +1,11 @@
 import { and, asc, eq, ne, or, sql } from "drizzle-orm";
-import { users, type User } from "../db/schema.ts";
+import { USER_SECURITY_DEFAULTS, users, type User } from "../db/schema.ts";
 import type { AppConfig, Db } from "../env.ts";
 import { badRequest, conflict, HttpError, notFound } from "../lib/errors.ts";
 import { escapeLike } from "../lib/names.ts";
 import { revokeUserSessions } from "../auth/session.ts";
 import { auditInsert } from "./audit.ts";
+import { getSettings } from "./settings.ts";
 import type { GoogleIdentity } from "../auth/oidc.ts";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -14,6 +15,14 @@ export function normalizeEmail(raw: unknown): string {
   const e = raw.trim().toLowerCase();
   if (e.length > 254 || !EMAIL_RE.test(e)) throw badRequest("invalid_email", "Invalid email");
   return e;
+}
+
+/** A timed ban whose end has passed is lifted lazily (and by the cleanup cron). */
+export async function liftExpiredBan(db: Db, u: User, now: number): Promise<User> {
+  if (u.status !== "disabled" || !u.bannedUntil || u.bannedUntil > now) return u;
+  const status = u.googleSub || u.passwordHash ? "active" : "invited";
+  await db.update(users).set({ status, bannedReason: null, bannedUntil: null, bannedBy: null, updatedAt: now }).where(eq(users.id, u.id));
+  return { ...u, status, bannedReason: null, bannedUntil: null, bannedBy: null };
 }
 
 export type LoginOutcome = { ok: true; user: User } | { ok: false; reason: "not_invited" | "disabled" | "account_mismatch" };
@@ -31,7 +40,8 @@ export async function resolveLogin(
   bootstrapEmail: string | undefined,
   now: number,
 ): Promise<LoginOutcome> {
-  const bySub = await db.select().from(users).where(eq(users.googleSub, id.sub)).get();
+  let bySub = await db.select().from(users).where(eq(users.googleSub, id.sub)).get();
+  if (bySub) bySub = await liftExpiredBan(db, bySub, now);
   if (bySub) {
     if (bySub.status === "disabled") return { ok: false, reason: "disabled" };
     let email = id.email;
@@ -48,7 +58,8 @@ export async function resolveLogin(
     return { ok: true, user: { ...bySub, status: "active", lastLoginAt: now, email } };
   }
 
-  const byEmail = await db.select().from(users).where(eq(users.email, id.email)).get();
+  let byEmail = await db.select().from(users).where(eq(users.email, id.email)).get();
+  if (byEmail) byEmail = await liftExpiredBan(db, byEmail, now);
   if (byEmail) {
     if (byEmail.googleSub && byEmail.googleSub !== id.sub) return { ok: false, reason: "account_mismatch" };
     if (byEmail.status === "disabled") return { ok: false, reason: "disabled" };
@@ -75,6 +86,7 @@ export async function resolveLogin(
         createdAt: now,
         updatedAt: now,
         lastLoginAt: now,
+        ...USER_SECURITY_DEFAULTS,
       };
       // Conditional insert: only if there is still no admin (guards concurrent bootstrap).
       const res = await db.run(sql`
@@ -134,7 +146,7 @@ export async function inviteMember(
 ) {
   const email = normalizeEmail(input.email);
   const role = input.role === "admin" ? "admin" : "member";
-  const quotaBytes = input.quotaBytes === undefined ? config.defaultQuotaBytes : parseQuota(input.quotaBytes);
+  const quotaBytes = input.quotaBytes === undefined ? (await getSettings(db, config)).defaultQuotaBytes : parseQuota(input.quotaBytes);
   const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).get();
   if (existing) throw conflict("member_exists", "This email is already on the list");
   const user: User = {
@@ -149,6 +161,7 @@ export async function inviteMember(
     createdAt: now,
     updatedAt: now,
     lastLoginAt: null,
+    ...USER_SECURITY_DEFAULTS,
   };
   await db.batch([
     db.insert(users).values(user),
@@ -196,14 +209,26 @@ export async function updateMember(
   }
   if (id === actor.id && next.status === "disabled") throw new HttpError(409, "self_disable", "You cannot disable yourself");
 
-  await db.batch([
-    db.update(users).set({ ...next, updatedAt: now }).where(eq(users.id, id)),
+  const [upd] = await db.batch([
+    db
+      .update(users)
+      .set({ ...next, updatedAt: now })
+      .where(
+        and(
+          eq(users.id, id),
+          // Re-checked atomically: concurrent demotions cannot remove the last admin.
+          losingAdmin
+            ? sql`EXISTS (SELECT 1 FROM users o WHERE o.role = 'admin' AND o.status = 'active' AND o.id <> ${id})`
+            : undefined,
+        ),
+      ),
     auditInsert(db, now, actor.id, "member.update", "user", id, {
       role: next.role ?? null,
       status: next.status ?? null,
       quotaBytes: next.quotaBytes ?? null,
     }),
   ]);
+  if ((upd as unknown as { meta: { changes: number } }).meta.changes !== 1) throw conflict("last_admin", "At least one active Admin is required");
   if (next.status === "disabled") await revokeUserSessions(db, id);
   const updated = await db.select().from(users).where(eq(users.id, id)).get();
   return memberDto(updated!);

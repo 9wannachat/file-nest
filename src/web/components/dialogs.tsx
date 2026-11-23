@@ -479,7 +479,9 @@ export function ShareDialog({ file, onClose, onChanged }: { file: FileItem | nul
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="private">Restricted</SelectItem>
-                      <SelectItem value="public">Anyone with the link</SelectItem>
+                      <SelectItem value="public" disabled={data.policy?.publicLinksEnabled === false}>
+                        Anyone with the link
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
@@ -489,6 +491,16 @@ export function ShareDialog({ file, onClose, onChanged }: { file: FileItem | nul
                   </p>
                 </div>
               </div>
+              {data.policy?.publicLinksEnabled === false ? (
+                <p role="note" className="text-xs text-muted-foreground">
+                  Public links are turned off by an Admin.
+                </p>
+              ) : null}
+              {data.publicLink && data.policy?.requirePassword && !data.publicLink.passwordProtected ? (
+                <p role="alert" className="rounded-md border border-warning/50 bg-warning/15 p-2 text-xs">
+                  Your organization requires a password on public links. This link won’t open until you add one.
+                </p>
+              ) : null}
               {data.publicLink ? (
                 <>
                   <div className="flex gap-2">

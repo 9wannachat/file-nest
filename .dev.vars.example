@@ -23,3 +23,6 @@ R2_LOCAL_SECRET_ACCESS_KEY=dev-secret-key
 # Passwordless dev login at /auth/dev-login. Only works when
 # ENVIRONMENT=development AND the request host is localhost/127.0.0.1.
 DEV_AUTH=1
+
+# Faster password hashing for local development only.
+PASSWORD_PBKDF2_ITERATIONS=50000

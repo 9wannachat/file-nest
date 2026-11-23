@@ -17,6 +17,7 @@ export interface Env {
   TRASH_RETENTION_DAYS?: string;
   DEV_AUTH?: string;
   DEV_S3_ENDPOINT?: string;
+  PASSWORD_PBKDF2_ITERATIONS?: string;
 }
 
 export type Db = DrizzleD1Database<typeof schema> & { $client: D1Database };
@@ -42,6 +43,8 @@ export type AppEnv = {
     deps: Deps;
     config: AppConfig;
     auth?: AuthContext;
+    /** Policy requires 2FA and the member has not enrolled: only enrollment is reachable. */
+    mfaSetupRequired?: boolean;
     requestId: string;
   };
 };

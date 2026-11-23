@@ -7,8 +7,18 @@ import { AppShell, OfflineBanner } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, Spinner } from "@/components/states";
 import { useOnline } from "@/lib/hooks";
-import { AdminPage } from "@/pages/AdminPage";
-import { LoginPage, NotAuthorizedPage } from "@/pages/AuthPages";
+import { AdminLayout } from "@/pages/admin/AdminLayout";
+import { AdminSettingsPage } from "@/pages/admin/AdminSettingsPage";
+import { AuditPage } from "@/pages/admin/AuditPage";
+import { InvitationsPage } from "@/pages/admin/InvitationsPage";
+import { MemberDetailPage } from "@/pages/admin/MemberDetailPage";
+import { MembersPage } from "@/pages/admin/MembersPage";
+import { OverviewPage } from "@/pages/admin/OverviewPage";
+import { PublicLinksPage } from "@/pages/admin/PublicLinksPage";
+import { StoragePage } from "@/pages/admin/StoragePage";
+import { InvitePage, LoginPage, MfaPage, NotAuthorizedPage, ResetPasswordPage } from "@/pages/AuthPages";
+import { MfaEnrollmentScreen } from "@/pages/MfaEnrollmentScreen";
+import { ReauthProvider } from "@/components/reauth";
 import { DrivePage } from "@/pages/DrivePage";
 import { SearchPage, SharedPage, TrashPage } from "@/pages/ListPages";
 import { SettingsPage } from "@/pages/SettingsPage";
@@ -44,6 +54,7 @@ function Protected() {
   }
   if (state.status === "anon") return <Navigate to="/login" replace state={{ from: loc.pathname + loc.search }} />;
   const me = state.me;
+  if (me.mfa?.setupRequired) return <MfaEnrollmentScreen />;
   return (
     <UploadProvider maxBytes={me.limits.maxUploadBytes}>
       <AppShell>
@@ -54,7 +65,20 @@ function Protected() {
           <Route path="trash" element={<TrashPage />} />
           <Route path="search" element={<SearchPage />} />
           <Route path="settings" element={<SettingsPage />} />
-          <Route path="admin" element={me.user.role === "admin" ? <AdminPage /> : <Navigate to="/" replace />} />
+          {me.user.role === "admin" ? (
+            <Route path="admin" element={<AdminLayout />}>
+              <Route index element={<OverviewPage />} />
+              <Route path="members" element={<MembersPage />} />
+              <Route path="members/:id" element={<MemberDetailPage />} />
+              <Route path="invitations" element={<InvitationsPage />} />
+              <Route path="links" element={<PublicLinksPage />} />
+              <Route path="settings" element={<AdminSettingsPage />} />
+              <Route path="storage" element={<StoragePage />} />
+              <Route path="audit" element={<AuditPage />} />
+            </Route>
+          ) : (
+            <Route path="admin/*" element={<Navigate to="/" replace />} />
+          )}
           <Route path="*" element={<EmptyState icon={<WifiOff />} title="Page not found" />} />
         </Routes>
       </AppShell>
@@ -73,12 +97,17 @@ export function App() {
     <BrowserRouter>
       <AuthProvider>
         <TooltipProvider delayDuration={300}>
+        <ReauthProvider>
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
           <Route path="/not-authorized" element={<NotAuthorizedPage />} />
+          <Route path="/mfa" element={<MfaPage />} />
+          <Route path="/invite/:token" element={<InvitePage />} />
+          <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
           <Route path="/*" element={<Protected />} />
         </Routes>
         <Toaster position="top-center" richColors closeButton />
+        </ReauthProvider>
         </TooltipProvider>
       </AuthProvider>
     </BrowserRouter>

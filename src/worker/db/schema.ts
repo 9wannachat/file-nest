@@ -17,6 +17,16 @@ export const users = sqliteTable("users", {
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
   lastLoginAt: integer("last_login_at"),
+  passwordHash: text("password_hash"),
+  passwordSalt: text("password_salt"),
+  passwordUpdatedAt: integer("password_updated_at"),
+  totpSecretEnc: text("totp_secret_enc"),
+  totpPendingEnc: text("totp_pending_enc"),
+  totpEnabledAt: integer("totp_enabled_at"),
+  totpLastStep: integer("totp_last_step"),
+  bannedReason: text("banned_reason"),
+  bannedUntil: integer("banned_until"),
+  bannedBy: text("banned_by"),
 });
 
 export const sessions = sqliteTable("sessions", {
@@ -27,6 +37,10 @@ export const sessions = sqliteTable("sessions", {
   createdAt: integer("created_at").notNull(),
   expiresAt: integer("expires_at").notNull(),
   lastSeenAt: integer("last_seen_at").notNull(),
+  reauthAt: integer("reauth_at"),
+  needsMfaSetup: integer("needs_mfa_setup", { mode: "boolean" }).notNull(),
+  authMethod: text("auth_method"),
+  userAgent: text("user_agent"),
 });
 
 export const oauthStates = sqliteTable("oauth_states", {
@@ -35,6 +49,7 @@ export const oauthStates = sqliteTable("oauth_states", {
   nonce: text("nonce").notNull(),
   returnTo: text("return_to").notNull(),
   expiresAt: integer("expires_at").notNull(),
+  invitationId: text("invitation_id"),
 });
 
 export const storageTargets = sqliteTable("storage_targets", {
@@ -183,8 +198,96 @@ export const auditEvents = sqliteTable("audit_events", {
 });
 
 export type User = typeof users.$inferSelect;
+
+/** Defaults for the password/2FA/ban columns when creating a member row. */
+export const USER_SECURITY_DEFAULTS = {
+  passwordHash: null,
+  passwordSalt: null,
+  passwordUpdatedAt: null,
+  totpSecretEnc: null,
+  totpPendingEnc: null,
+  totpEnabledAt: null,
+  totpLastStep: null,
+  bannedReason: null,
+  bannedUntil: null,
+  bannedBy: null,
+} as const;
 export type Session = typeof sessions.$inferSelect;
 export type StorageTarget = typeof storageTargets.$inferSelect;
 export type Folder = typeof folders.$inferSelect;
 export type FileRow = typeof files.$inferSelect;
 export type UploadSession = typeof uploadSessions.$inferSelect;
+
+export const mfaChallenges = sqliteTable("mfa_challenges", {
+  id: text("id").primaryKey(),
+  tokenHash: text("token_hash").notNull(),
+  userId: text("user_id").notNull(),
+  authMethod: text("auth_method").notNull(),
+  returnTo: text("return_to").notNull(),
+  createdAt: integer("created_at").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+});
+
+export const recoveryCodes = sqliteTable("recovery_codes", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  codeHash: text("code_hash").notNull(),
+  createdAt: integer("created_at").notNull(),
+  usedAt: integer("used_at"),
+});
+
+export const passwordResets = sqliteTable("password_resets", {
+  id: text("id").primaryKey(),
+  tokenHash: text("token_hash").notNull(),
+  userId: text("user_id").notNull(),
+  createdBy: text("created_by"),
+  createdAt: integer("created_at").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+  usedAt: integer("used_at"),
+});
+
+export const invitations = sqliteTable("invitations", {
+  id: text("id").primaryKey(),
+  tokenHash: text("token_hash").notNull(),
+  tokenEnc: text("token_enc").notNull(),
+  email: text("email"),
+  role: text("role", { enum: ["admin", "member"] }).notNull(),
+  quotaBytes: integer("quota_bytes"),
+  maxUses: integer("max_uses").notNull(),
+  useCount: integer("use_count").notNull(),
+  note: text("note"),
+  createdBy: text("created_by"),
+  createdAt: integer("created_at").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+  revokedAt: integer("revoked_at"),
+});
+export type Invitation = typeof invitations.$inferSelect;
+
+export const invitationUses = sqliteTable(
+  "invitation_uses",
+  {
+    invitationId: text("invitation_id").notNull(),
+    userId: text("user_id").notNull(),
+    usedAt: integer("used_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.invitationId, t.userId] })],
+);
+
+export const authAttempts = sqliteTable(
+  "auth_attempts",
+  {
+    scope: text("scope").notNull(),
+    key: text("key").notNull(),
+    failedAttempts: integer("failed_attempts").notNull(),
+    lockedUntil: integer("locked_until"),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.scope, t.key] })],
+);
+
+export const systemSettings = sqliteTable("system_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+  updatedBy: text("updated_by"),
+});

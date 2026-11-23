@@ -2,7 +2,7 @@ import { env, createExecutionContext, waitOnExecutionContext } from "cloudflare:
 import { exportJWK, generateKeyPair, SignJWT, createLocalJWKSet } from "jose";
 import { createApp } from "../../src/worker/app.ts";
 import { getDb } from "../../src/worker/db/client.ts";
-import { appSettings, storageTargets, users, type User } from "../../src/worker/db/schema.ts";
+import { appSettings, storageTargets, USER_SECURITY_DEFAULTS, users, type User } from "../../src/worker/db/schema.ts";
 import { createSession } from "../../src/worker/auth/session.ts";
 import { createFakeS3, type FakeS3 } from "../../src/dev/fake-s3.ts";
 import { loadConfig, type Env } from "../../src/worker/env.ts";
@@ -98,6 +98,7 @@ export async function makeUser(p: Partial<User> = {}): Promise<User> {
     createdAt: now,
     updatedAt: now,
     lastLoginAt: now,
+    ...USER_SECURITY_DEFAULTS,
     ...p,
   };
   await db().insert(users).values(u);
@@ -172,10 +173,19 @@ export async function resetDb() {
     "sessions",
     "oauth_states",
     "api_tokens",
+    "mfa_challenges",
+    "recovery_codes",
+    "password_resets",
+    "invitation_uses",
+    "invitations",
+    "auth_attempts",
+    "system_settings",
   ]) {
     await d.prepare(`DELETE FROM ${t}`).run();
   }
   await d.prepare("UPDATE app_settings SET default_storage_id = NULL").run();
   await d.prepare("DELETE FROM storage_targets").run();
   await d.prepare("DELETE FROM users").run();
+  // Baseline: 2FA optional (policy tests switch it on explicitly).
+  await d.prepare(`INSERT INTO system_settings (key, value, updated_at) VALUES ('mfaPolicy', '"optional"', 0)`).run();
 }

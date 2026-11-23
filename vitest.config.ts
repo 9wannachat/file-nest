@@ -30,6 +30,7 @@ export default defineConfig({
                 DEFAULT_QUOTA_BYTES: "52428800",
                 UPLOAD_RATE_PER_HOUR: "50",
                 TRASH_RETENTION_DAYS: "30",
+                PASSWORD_PBKDF2_ITERATIONS: "20000",
                 R2_A_ACCESS_KEY_ID: "test-a-key",
                 R2_A_SECRET_ACCESS_KEY: "test-a-secret",
                 R2_B_ACCESS_KEY_ID: "test-b-key",

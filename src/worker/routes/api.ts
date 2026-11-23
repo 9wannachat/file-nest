@@ -1,17 +1,20 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { AppEnv } from "../env.ts";
-import { authOf, appOrigin, requireAdmin, requireSameOrigin, requireUser, sessionOf } from "../auth/middleware.ts";
+import { authOf, appOrigin, requireSameOrigin, requireUser, sessionOf } from "../auth/middleware.ts";
+import { account } from "./account.ts";
+import { admin } from "./admin.ts";
+import { getSettings, mfaRequired } from "../services/settings.ts";
 import * as tokens from "../services/tokens.ts";
 import { fileFor } from "../authz.ts";
 import { serveFile } from "../services/content.ts";
 import * as drive from "../services/drive.ts";
 import * as members from "../services/members.ts";
 import * as shares from "../services/shares.ts";
-import * as storage from "../services/storage.ts";
 import { abortUpload, createUpload, finalizeUpload } from "../services/uploads.ts";
-import { auditEvents, files } from "../db/schema.ts";
-import { desc, eq, lt, sql } from "drizzle-orm";
+import { files } from "../db/schema.ts";
+import { HttpError } from "../lib/errors.ts";
+import { eq, sql } from "drizzle-orm";
 import { idParam, jsonBody, now, storageCtx } from "./util.ts";
 
 export const api = new Hono<AppEnv>();
@@ -36,6 +39,7 @@ api.use("*", requireUser);
 // ---- session ----
 api.get("/me", async (c) => {
   const { user, session } = authOf(c);
+  const settings = await getSettings(c.get("db"), c.get("config"));
   const used = await c
     .get("db")
     .select({ n: sql<number>`coalesce(sum(${files.size}), 0)` })
@@ -46,7 +50,8 @@ api.get("/me", async (c) => {
     user: { id: user.id, email: user.email, name: user.name, role: user.role, quotaBytes: user.quotaBytes, usedBytes: used?.n ?? 0 },
     csrfToken: session?.csrfToken ?? null,
     auth: session ? "session" : "token",
-    limits: { maxUploadBytes: c.get("config").maxUploadBytes },
+    mfa: { enabled: !!user.totpEnabledAt, setupRequired: !!c.get("mfaSetupRequired"), required: mfaRequired(settings, user.role) },
+    limits: { maxUploadBytes: settings.maxUploadBytes },
   });
 });
 
@@ -109,30 +114,38 @@ for (const mode of ["preview", "download"] as const) {
 }
 
 // ---- sharing (owner only) ----
+async function sharingResponse(c: Parameters<typeof idParam>[0]) {
+  const s = await getSettings(c.get("db"), c.get("config"));
+  const r = await shares.getSharing(c.get("db"), c.env, authOf(c).user, idParam(c), appOrigin(c));
+  return { ...r, policy: { publicLinksEnabled: s.publicLinksEnabled, requirePassword: s.publicLinksRequirePassword } };
+}
 api.get("/files/:id/sharing", async (c) =>
-  c.json(await shares.getSharing(c.get("db"), c.env, authOf(c).user, idParam(c), appOrigin(c))),
+  c.json(await sharingResponse(c)),
 );
 api.put("/files/:id/sharing/members", async (c) => {
   const b = await jsonBody(c);
   await shares.setMemberShares(c.get("db"), authOf(c).user, idParam(c), b.userIds, now(c));
-  return c.json(await shares.getSharing(c.get("db"), c.env, authOf(c).user, idParam(c), appOrigin(c)));
+  return c.json(await sharingResponse(c));
 });
 api.post("/files/:id/sharing/link", async (c) => {
+  if (!(await getSettings(c.get("db"), c.get("config"))).publicLinksEnabled) {
+    throw new HttpError(403, "public_links_disabled", "Public links are turned off by an Admin");
+  }
   await shares.createPublicLink(c.get("db"), c.env, authOf(c).user, idParam(c), appOrigin(c), now(c));
-  return c.json(await shares.getSharing(c.get("db"), c.env, authOf(c).user, idParam(c), appOrigin(c)), 201);
+  return c.json(await sharingResponse(c), 201);
 });
 api.delete("/files/:id/sharing/link", async (c) => {
   await shares.revokePublicLink(c.get("db"), authOf(c).user, idParam(c), now(c));
-  return c.json(await shares.getSharing(c.get("db"), c.env, authOf(c).user, idParam(c), appOrigin(c)));
+  return c.json(await sharingResponse(c));
 });
 api.put("/files/:id/sharing/link/password", async (c) => {
   const b = await jsonBody(c);
   await shares.setLinkPassword(c.get("db"), authOf(c).user, idParam(c), b.password, now(c));
-  return c.json(await shares.getSharing(c.get("db"), c.env, authOf(c).user, idParam(c), appOrigin(c)));
+  return c.json(await sharingResponse(c));
 });
 api.delete("/files/:id/sharing/link/password", async (c) => {
   await shares.setLinkPassword(c.get("db"), authOf(c).user, idParam(c), null, now(c));
-  return c.json(await shares.getSharing(c.get("db"), c.env, authOf(c).user, idParam(c), appOrigin(c)));
+  return c.json(await sharingResponse(c));
 });
 
 // ---- personal access tokens (browser session only; a token cannot mint tokens) ----
@@ -159,48 +172,6 @@ api.post("/uploads/:id/finalize", async (c) => {
 });
 api.post("/uploads/:id/abort", async (c) => c.json(await abortUpload(storageCtx(c), authOf(c).user, idParam(c))));
 
-// ---- admin ----
-const admin = new Hono<AppEnv>();
-admin.use("*", requireAdmin);
-admin.get("/members", async (c) => c.json({ members: await members.listMembers(c.get("db")) }));
-admin.post("/members", async (c) => {
-  const b = await jsonBody(c);
-  return c.json(await members.inviteMember(c.get("db"), authOf(c).user, b, c.get("config"), now(c)), 201);
-});
-admin.patch("/members/:id", async (c) => {
-  const b = await jsonBody(c);
-  return c.json(await members.updateMember(c.get("db"), authOf(c).user, idParam(c), b, now(c)));
-});
-admin.get("/storage", async (c) => {
-  const ctx = storageCtx(c);
-  return c.json({ targets: await storage.listTargets(ctx), defaultStorageId: await storage.getDefaultStorageId(ctx.db) });
-});
-admin.post("/storage", async (c) => {
-  const b = await jsonBody(c);
-  return c.json(await storage.createTarget(storageCtx(c), authOf(c).user, b), 201);
-});
-admin.patch("/storage/:id", async (c) => {
-  const b = await jsonBody(c);
-  return c.json(await storage.updateTarget(storageCtx(c), authOf(c).user, idParam(c), b));
-});
-admin.delete("/storage/:id", async (c) => {
-  await storage.deleteTarget(storageCtx(c), authOf(c).user, idParam(c));
-  return c.json({ ok: true });
-});
-admin.post("/storage/:id/check", async (c) => c.json(await storage.checkTarget(storageCtx(c), idParam(c), appOrigin(c))));
-admin.put("/storage-default", async (c) => {
-  const b = await jsonBody(c);
-  return c.json(await storage.setDefaultTarget(storageCtx(c), authOf(c).user, b.storageId));
-});
-admin.get("/audit", async (c) => {
-  const before = Number(c.req.query("before"));
-  const rows = await c
-    .get("db")
-    .select()
-    .from(auditEvents)
-    .where(Number.isSafeInteger(before) && before > 0 ? lt(auditEvents.createdAt, before) : undefined)
-    .orderBy(desc(auditEvents.createdAt))
-    .limit(100);
-  return c.json({ events: rows });
-});
+// ---- account security & admin console ----
+api.route("/account", account);
 api.route("/admin", admin);

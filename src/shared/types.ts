@@ -6,6 +6,7 @@ export type MemberStatus = "invited" | "active" | "disabled";
 export interface Me {
   user: { id: string; email: string; name: string | null; role: Role; quotaBytes: number; usedBytes: number };
   auth?: "session" | "token";
+  mfa?: { enabled: boolean; setupRequired: boolean; required: boolean };
   csrfToken: string;
   limits: { maxUploadBytes: number };
 }
@@ -52,6 +53,7 @@ export interface Sharing {
   visibility: "private" | "public";
   members: { id: string; email: string; name: string | null; grantedAt: number }[];
   publicLink: { url: string; createdAt: number; passwordProtected: boolean } | null;
+  policy?: { publicLinksEnabled: boolean; requirePassword: boolean };
 }
 
 export interface MemberLite {
@@ -124,4 +126,60 @@ export interface ApiTokenInfo {
   lastUsedAt: number | null;
   expiresAt: number;
   revokedAt: number | null;
+}
+
+export interface AuthConfig {
+  google: boolean;
+  password: boolean;
+  registration: "invite" | "closed";
+}
+
+export interface AccountInfo {
+  email: string;
+  name: string | null;
+  hasPassword: boolean;
+  googleLinked: boolean;
+  mfa: { enabled: boolean; enabledAt: number | null; required: boolean; recoveryCodesRemaining: number };
+  passwordUpdatedAt: number | null;
+  reauthUntil: number | null;
+  sessions: { id: string; createdAt: number; lastSeenAt: number; authMethod: string | null; userAgent: string | null; current: boolean }[];
+}
+
+export interface SystemSettings {
+  registrationMode: "invite" | "closed";
+  googleEnabled: boolean;
+  passwordEnabled: boolean;
+  mfaPolicy: "optional" | "admins" | "all";
+  defaultQuotaBytes: number;
+  maxUploadBytes: number;
+  sessionTtlDays: number;
+  trashRetentionDays: number;
+  publicLinksEnabled: boolean;
+  publicLinksRequirePassword: boolean;
+}
+
+export interface AdminMember extends Member {
+  hasPassword: boolean;
+  googleLinked: boolean;
+  mfaEnabled: boolean;
+  bannedReason: string | null;
+  bannedUntil: number | null;
+  usedBytes: number;
+  fileCount: number;
+  sessionCount: number;
+}
+
+export interface InvitationInfo {
+  id: string;
+  email: string | null;
+  role: Role;
+  quotaBytes: number | null;
+  maxUses: number;
+  useCount: number;
+  note: string | null;
+  createdAt: number;
+  expiresAt: number;
+  revokedAt: number | null;
+  state: "active" | "revoked" | "expired" | "used_up";
+  url: string | null;
 }

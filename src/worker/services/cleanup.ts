@@ -9,6 +9,8 @@ import { and, asc, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { files, oauthStates, objectDeletions, shareUnlockAttempts, uploadSessions } from "../db/schema.ts";
 import { log } from "../lib/log.ts";
 import { purgeExpiredSessions } from "../auth/session.ts";
+import { purgeAuthLeftovers } from "./authn.ts";
+import { getSettings } from "./settings.ts";
 import { purgeTrashRoots } from "./drive.ts";
 import { expireSession } from "./uploads.ts";
 import { bucketById, type StorageCtx } from "./storage.ts";
@@ -90,7 +92,8 @@ export async function runCleanup(ctx: StorageCtx) {
   }
 
   // 3. Purge old trash.
-  const cutoff = now - config.trashRetentionDays * 24 * 3600_000;
+  const settings = await getSettings(db, config);
+  const cutoff = now - settings.trashRetentionDays * 24 * 3600_000;
   const roots = await db.all<{ id: string }>(sql`
     SELECT id FROM folders WHERE trash_root_id = id AND trashed_at < ${cutoff}
     UNION ALL
@@ -106,6 +109,12 @@ export async function runCleanup(ctx: StorageCtx) {
   // 4. Housekeeping.
   await purgeExpiredSessions(db, now);
   await db.delete(oauthStates).where(lt(oauthStates.expiresAt, now));
+  await purgeAuthLeftovers(db, now);
+  // Lift timed bans that have ended.
+  await db.run(sql`UPDATE users SET
+      status = CASE WHEN google_sub IS NOT NULL OR password_hash IS NOT NULL THEN 'active' ELSE 'invited' END,
+      banned_reason = NULL, banned_until = NULL, banned_by = NULL, updated_at = ${now}
+    WHERE status = 'disabled' AND banned_until IS NOT NULL AND banned_until <= ${now}`);
   await db.delete(shareUnlockAttempts).where(lt(shareUnlockAttempts.updatedAt, now - 2 * 24 * 3600_000));
 
   log.info("cleanup.done", stats);

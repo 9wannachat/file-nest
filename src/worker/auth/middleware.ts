@@ -5,6 +5,7 @@ import { HttpError } from "../lib/errors.ts";
 import { timingSafeEqual } from "../lib/crypto.ts";
 import { authenticateBearer, hasScope, type Scope } from "../services/tokens.ts";
 import { loadSession, sessionCookieName } from "./session.ts";
+import { getSettings, mfaRequired } from "../services/settings.ts";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -33,6 +34,23 @@ const TOKEN_ROUTES: [method: "GET" | "POST", path: RegExp, scope: Scope][] = [
 export function tokenRouteScope(method: string, path: string): Scope | null {
   const m = method === "HEAD" ? "GET" : method;
   return TOKEN_ROUTES.find(([rm, re]) => rm === m && re.test(path))?.[2] ?? null;
+}
+
+const MFA_SETUP_ROUTES: [string, RegExp][] = [
+  ["GET", /^\/api\/me$/],
+  ["GET", /^\/api\/account$/],
+  ["POST", /^\/api\/account\/2fa\/(setup|enable)$/],
+];
+
+export const REAUTH_WINDOW_MS = 10 * 60_000;
+
+/** Sensitive actions need a sign-in or re-authentication within the last 10 minutes. */
+export function requireRecentAuth(c: { get: (k: "auth") => AppEnv["Variables"]["auth"] }, now: number) {
+  const a = c.get("auth");
+  if (!a?.session) throw new HttpError(403, "token_not_allowed", "Sign in with a browser session");
+  if (!a.session.reauthAt || a.session.reauthAt < now - REAUTH_WINDOW_MS) {
+    throw new HttpError(403, "reauth_required", "Confirm it's you to continue");
+  }
 }
 
 const bearerOf = (h: string | undefined) => (h && /^Bearer\s+/i.test(h) ? h.replace(/^Bearer\s+/i, "").trim() : null);
@@ -78,12 +96,23 @@ export const requireUser: MiddlewareHandler<AppEnv> = async (c, next) => {
       throw new HttpError(401, "invalid_token", "Invalid, expired or revoked token");
     }
     if (!hasScope(r.token, scope)) throw new HttpError(403, "insufficient_scope", `Token lacks scope ${scope}`);
+    if (mfaRequired(await getSettings(c.get("db"), c.get("config")), r.user.role) && !r.user.totpEnabledAt) {
+      throw new HttpError(403, "mfa_setup_required", "Set up two-factor authentication in FileNest before using API tokens");
+    }
     c.set("auth", { user: r.user, token: r.token });
     return next();
   }
 
   const auth = await loadSession(c);
   if (!auth) throw new HttpError(401, "unauthenticated", "Sign in required");
+  // 2FA is required (by the flag set at sign-in, or by the CURRENT policy, e.g. after
+  // a promotion or a policy change) but not set up yet: only enrollment is reachable.
+  const gated =
+    !auth.user.totpEnabledAt && (auth.session.needsMfaSetup || mfaRequired(await getSettings(c.get("db"), c.get("config")), auth.user.role));
+  c.set("mfaSetupRequired", gated);
+  if (gated && !MFA_SETUP_ROUTES.some(([m, re]) => m === (c.req.method === "HEAD" ? "GET" : c.req.method) && re.test(c.req.path))) {
+    throw new HttpError(403, "mfa_setup_required", "Set up two-factor authentication to continue");
+  }
   if (!SAFE_METHODS.has(c.req.method)) {
     const token = c.req.header("X-CSRF-Token") ?? "";
     if (!timingSafeEqual(token, auth.session.csrfToken)) {

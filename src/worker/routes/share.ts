@@ -10,6 +10,7 @@ import { HttpError } from "../lib/errors.ts";
 import { serveFile } from "../services/content.ts";
 import { attemptUnlock, isUnlocked, linkForToken, makeUnlockCookie, UNLOCK_TTL_MS, unlockClientKey } from "../services/shares.ts";
 import { appOrigin } from "../auth/middleware.ts";
+import { getSettings } from "../services/settings.ts";
 import { storageCtx } from "./util.ts";
 
 export const shareRoutes = new Hono<AppEnv>();
@@ -88,7 +89,11 @@ function themeClass(c: Context<AppEnv>): string {
 
 async function resolve(c: Context<AppEnv>) {
   try {
-    return await linkForToken(c.get("db"), c.req.param("token") ?? "");
+    const found = await linkForToken(c.get("db"), c.req.param("token") ?? "");
+    const s = await getSettings(c.get("db"), c.get("config"));
+    // Admin policy: links off entirely, or links without a password are inactive.
+    if (!s.publicLinksEnabled || (s.publicLinksRequirePassword && !found.link.passwordHash)) return null;
+    return found;
   } catch (e) {
     if (e instanceof HttpError && e.status === 404) return null;
     throw e;
