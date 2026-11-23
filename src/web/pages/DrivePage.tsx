@@ -144,7 +144,7 @@ export function DrivePage() {
       {/* Mobile: floating upload button (hidden while the upload panel occupies the bottom edge) */}
       {uploadItems.length ? null : <Button
         size="icon-lg"
-        className="fixed right-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-20 size-14 rounded-full shadow-lg md:hidden"
+        className="fixed right-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-20 size-14 min-h-[52px] min-w-[52px] rounded-full shadow-lg md:hidden"
         aria-label="Upload"
         onClick={() => input.current?.click()}
       >

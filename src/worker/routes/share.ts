@@ -46,7 +46,7 @@ const STYLE = `
 :root{--tint:#0f172a0d;--bg:#f8fafc;--fg:#0f172a;--card:#fff;--border:#e2e8f0;--muted:#64748b;--brand:#0f766e;--brand-fg:#fff;--err:#b91c1c;--input:#fff;color-scheme:light}
 :root.dark{${DARK_VARS};color-scheme:dark}
 @media (prefers-color-scheme:dark){:root:not(.light){${DARK_VARS};color-scheme:dark}}
-*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--fg)}
+*{box-sizing:border-box}body{margin:0;font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--fg)}
 header{display:flex;align-items:center;gap:.6rem;padding:.9rem 1.25rem;border-bottom:1px solid var(--border);background:var(--card)}
 header b{color:var(--brand)}main{max-width:960px;margin:0 auto;padding:1.25rem}
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1rem 1.25rem}

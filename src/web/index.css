@@ -120,6 +120,26 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /*
+   * Compact UI: every Tailwind size is rem-based, so the root font size scales
+   * text and components together. 15px on phones, 14px from 768px up.
+   */
+  html {
+    font-size: 15px;
+  }
+  @media (min-width: 768px) {
+    html {
+      font-size: 14px;
+    }
+  }
+  /* iOS Safari zooms into inputs below 16px: keep form fields at 16px on phones. */
+  @media (max-width: 767px) {
+    input:not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
   html,
   body,
   #root {
@@ -127,5 +147,13 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
+  }
+}
+
+/* Touch targets stay at least 40×40 px on phones regardless of the root size. */
+@utility tap-target {
+  @media (max-width: 767px) {
+    min-width: 40px;
+    min-height: 40px;
   }
 }

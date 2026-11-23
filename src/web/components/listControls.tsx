@@ -53,6 +53,7 @@ export function ViewToggle({ view, setView }: { view: ViewMode; setView: (v: Vie
           <TooltipTrigger asChild>
             <Button
               size="icon-sm"
+              className="tap-target"
               variant={view === v ? "secondary" : "ghost"}
               aria-label={label}
               aria-pressed={view === v}

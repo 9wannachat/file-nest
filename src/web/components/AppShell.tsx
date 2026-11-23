@@ -142,7 +142,7 @@ function UserMenu({ compact }: { compact?: boolean }) {
     <DropdownMenu>
       {compact ? (
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="rounded-full" aria-label={`Account: ${me.user.email}`}>
+          <Button variant="ghost" size="icon" className="tap-target rounded-full" aria-label={`Account: ${me.user.email}`}>
             {avatar}
           </Button>
         </DropdownMenuTrigger>
@@ -270,7 +270,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <PwaBar />
         <QuotaBannerForMe />
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3 sm:px-4">
-          <SidebarTrigger aria-label="Toggle navigation" />
+          <SidebarTrigger aria-label="Toggle navigation" className="tap-target" />
           <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-5" />
           <Button
             variant="outline"

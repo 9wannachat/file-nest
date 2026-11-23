@@ -42,7 +42,7 @@ export function UploadPanel() {
             Clear
           </Button>
         ) : null}
-        <Button size="icon-sm" variant="ghost" className="size-10 md:size-8" aria-label={open ? "Collapse uploads" : "Expand uploads"} aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Button size="icon-sm" variant="ghost" className="tap-target size-10 md:size-8" aria-label={open ? "Collapse uploads" : "Expand uploads"} aria-expanded={open} onClick={() => setOpen(!open)}>
           {open ? <ChevronDown /> : <ChevronUp />}
         </Button>
       </header>
@@ -67,7 +67,7 @@ export function UploadPanel() {
                 </Button>
               ) : null}
               {["queued", "uploading"].includes(i.state) ? (
-                <Button size="icon-sm" variant="ghost" className="size-10 md:size-8" aria-label={`Cancel ${i.file.name}`} onClick={() => cancel(i.key)}>
+                <Button size="icon-sm" variant="ghost" className="tap-target size-10 md:size-8" aria-label={`Cancel ${i.file.name}`} onClick={() => cancel(i.key)}>
                   <X />
                 </Button>
               ) : null}

@@ -72,7 +72,7 @@ function ActionsMenu({ item, actions }: { item: DriveItem; actions: ItemAction[]
     <Button
       size="icon"
       variant="ghost"
-      className="size-10 md:size-8"
+      className="tap-target size-10 md:size-8"
       aria-label={`Actions for ${item.name}`}
       onClick={isMobile ? (e) => (e.stopPropagation(), setSheet(true)) : (e) => e.stopPropagation()}
     >
