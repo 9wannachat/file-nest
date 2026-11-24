@@ -287,6 +287,8 @@ test("admin settings: changes save and apply (password sign-in switch)", async (
   const p = await anon.newPage();
   await p.goto("/login");
   await expect(p.getByRole("link", { name: "Continue with Google" })).toBeVisible();
+  await expect(p.getByRole("link", { name: "Continue with GitHub" })).toBeVisible();
+  await expect(p.getByRole("link", { name: "Continue with Microsoft" })).toHaveCount(0); // not configured
   await expect(p.getByRole("form", { name: "Sign in with email" })).toHaveCount(0);
   await anon.close();
   await page.getByRole("switch", { name: "Sign in with email and password" }).click();

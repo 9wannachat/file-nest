@@ -4,7 +4,8 @@
  * A use is claimed atomically (expiry, revocation, max uses) when an account is created.
  */
 import { desc, eq, sql } from "drizzle-orm";
-import { invitations, invitationUses, users, USER_SECURITY_DEFAULTS, type Invitation, type User } from "../db/schema.ts";
+import { invitations, invitationUses, userIdentities, users, USER_SECURITY_DEFAULTS, type Invitation, type User } from "../db/schema.ts";
+import type { Provider } from "../auth/providers.ts";
 import type { Db, Env } from "../env.ts";
 import { decryptString, encryptString, randomToken, sha256Hex } from "../lib/crypto.ts";
 import { badRequest, conflict, HttpError, notFound } from "../lib/errors.ts";
@@ -120,7 +121,7 @@ export async function activeInvitation(db: Db, token: string, now: number): Prom
 export async function acceptInvitation(
   db: Db,
   inv: Invitation,
-  account: { email: string; name: string | null; googleSub: string | null; passwordHash?: string; passwordSalt?: string },
+  account: { email: string; name: string | null; identity?: { provider: Provider; subject: string; email: string }; passwordHash?: string; passwordSalt?: string },
   defaultQuota: number,
   now: number,
 ): Promise<User> {
@@ -134,7 +135,7 @@ export async function acceptInvitation(
   const user: User = {
     id: crypto.randomUUID(),
     email: account.email,
-    googleSub: account.googleSub,
+    googleSub: null,
     name: account.name,
     role: inv.role,
     status: "active",
@@ -152,8 +153,11 @@ export async function acceptInvitation(
     await db.batch([
       db.insert(users).values(user),
       db.insert(invitationUses).values({ invitationId: inv.id, userId: user.id, usedAt: now }),
-      auditInsert(db, now, user.id, "invite.accept", "invitation", inv.id, { method: account.googleSub ? "google" : "password" }),
-    ]);
+      ...(account.identity
+        ? [db.insert(userIdentities).values({ ...account.identity, userId: user.id, createdAt: now })]
+        : []),
+      auditInsert(db, now, user.id, "invite.accept", "invitation", inv.id, { method: account.identity?.provider ?? "password" }),
+    ] as unknown as [ReturnType<typeof auditInsert>]);
   } catch (e) {
     // Give the use back if the account could not be created (e.g. concurrent same-email sign-up).
     await db.run(sql`UPDATE invitations SET use_count = use_count - 1 WHERE id = ${inv.id} AND use_count > 0`);

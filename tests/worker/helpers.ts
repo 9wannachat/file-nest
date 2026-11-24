@@ -2,7 +2,7 @@ import { env, createExecutionContext, waitOnExecutionContext } from "cloudflare:
 import { exportJWK, generateKeyPair, SignJWT, createLocalJWKSet } from "jose";
 import { createApp } from "../../src/worker/app.ts";
 import { getDb } from "../../src/worker/db/client.ts";
-import { appSettings, storageTargets, USER_SECURITY_DEFAULTS, users, type User } from "../../src/worker/db/schema.ts";
+import { appSettings, storageTargets, USER_SECURITY_DEFAULTS, userIdentities, users, type User } from "../../src/worker/db/schema.ts";
 import { createSession } from "../../src/worker/auth/session.ts";
 import { createFakeS3, type FakeS3 } from "../../src/dev/fake-s3.ts";
 import { loadConfig, type Env } from "../../src/worker/env.ts";
@@ -38,7 +38,7 @@ export async function googleKeys() {
 }
 
 export function setup(
-  opts: { googleFetch?: typeof fetch; googleJwks?: import("jose").JWTVerifyGetKey; beforeS3?: (req: Request) => Promise<void> } = {},
+  opts: { oauthFetch?: typeof fetch; oauthJwks?: Partial<Record<"google" | "microsoft", import("jose").JWTVerifyGetKey>>; beforeS3?: (req: Request) => Promise<void> } = {},
 ) {
   const clock: Clock = { t: Date.now() };
   const s3: FakeS3 = createFakeS3({ allowedOrigins: [ORIGIN], now: () => clock.t });
@@ -49,8 +49,8 @@ export function setup(
   }) as typeof fetch;
   const app = createApp({
     s3Fetch,
-    googleFetch: opts.googleFetch ?? (async () => new Response("no", { status: 500 })),
-    googleJwks: opts.googleJwks,
+    oauthFetch: opts.oauthFetch ?? (async () => new Response("no", { status: 500 })),
+    oauthJwks: opts.oauthJwks,
     now: () => clock.t,
   });
 
@@ -73,7 +73,7 @@ export function setup(
 
   const json = (body: unknown) => JSON.stringify(body);
 
-  return { app, s3, clock, call, json, ctx: { db: db(), env: testEnv, config: loadConfig(testEnv), deps: { s3Fetch: s3.fetch, googleFetch: fetch, now: () => clock.t } } };
+  return { app, s3, clock, call, json, ctx: { db: db(), env: testEnv, config: loadConfig(testEnv), deps: { s3Fetch: s3.fetch, oauthFetch: fetch, now: () => clock.t } } };
 }
 
 export interface Login {
@@ -101,7 +101,12 @@ export async function makeUser(p: Partial<User> = {}): Promise<User> {
     ...USER_SECURITY_DEFAULTS,
     ...p,
   };
-  await db().insert(users).values(u);
+  // `googleSub` is kept as a test shorthand for "has a linked Google identity".
+  await db().insert(users).values({ ...u, googleSub: null });
+  if (u.googleSub) {
+    const provider = u.googleSub.startsWith("dev:") ? "dev" : "google";
+    await db().insert(userIdentities).values({ provider, subject: u.googleSub, userId: u.id, email: u.email, createdAt: now });
+  }
   return u;
 }
 
@@ -182,6 +187,7 @@ export async function resetDb() {
     "invitations",
     "auth_attempts",
     "system_settings",
+    "user_identities",
   ]) {
     await d.prepare(`DELETE FROM ${t}`).run();
   }

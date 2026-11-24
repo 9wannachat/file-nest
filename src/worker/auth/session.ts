@@ -15,7 +15,7 @@ export function sessionCookieName(config: AppConfig) {
 }
 
 export interface SessionOptions {
-  authMethod?: "google" | "password" | "dev";
+  authMethod?: "google" | "microsoft" | "github" | "password" | "dev";
   userAgent?: string | null;
   /** Policy requires 2FA but the member has not enrolled yet: only enrollment is allowed. */
   needsMfaSetup?: boolean;

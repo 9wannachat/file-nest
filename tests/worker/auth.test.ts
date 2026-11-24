@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { users } from "../../src/worker/db/schema.ts";
+import { userIdentities, users } from "../../src/worker/db/schema.ts";
 import { db, googleKeys, login, makeUser, ORIGIN, resetDb, setup } from "./helpers.ts";
 
 beforeEach(resetDb);
@@ -14,7 +14,7 @@ async function oidcFlow(claims: (nonce: string) => Record<string, unknown>, toke
     expect(form.get("redirect_uri")).toBe(`${ORIGIN}/auth/callback`);
     return Response.json({ id_token: await keys.idToken(claims(nonce), tokenOpts) });
   }) as typeof fetch;
-  const t = setup({ googleFetch, googleJwks: keys.jwks });
+  const t = setup({ oauthFetch: googleFetch, oauthJwks: { google: keys.jwks } });
   const start = await t.call("/auth/login?return_to=/folders/abc");
   expect(start.status).toBe(302);
   const loc = new URL(start.headers.get("Location")!);
@@ -38,8 +38,9 @@ describe("Google OIDC login", () => {
     expect(cookie).toMatch(/Secure/i);
     expect(cookie).toMatch(/SameSite=Lax/i);
     const u = await db().select().from(users).where(eq(users.email, "inv@example.test")).get();
-    expect(u?.googleSub).toBe("g-1");
     expect(u?.status).toBe("active");
+    const ident = await db().select().from(userIdentities).where(eq(userIdentities.userId, u!.id)).all();
+    expect(ident.map((i) => [i.provider, i.subject])).toEqual([["google", "g-1"]]);
   });
 
   it("non-allowlisted email is denied", async () => {
@@ -72,7 +73,7 @@ describe("Google OIDC login", () => {
 
   it("state must match the browser cookie and is single use", async () => {
     const keys = await googleKeys();
-    const t = setup({ googleJwks: keys.jwks });
+    const t = setup({ oauthJwks: { google: keys.jwks } });
     const start = await t.call("/auth/login");
     const state = new URL(start.headers.get("Location")!).searchParams.get("state")!;
     const noCookie = await t.call(`/auth/callback?code=x&state=${state}`);

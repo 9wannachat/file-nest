@@ -9,6 +9,12 @@ export interface Env {
   APP_ORIGIN?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  MICROSOFT_CLIENT_ID?: string;
+  MICROSOFT_CLIENT_SECRET?: string;
+  /** Optional: restrict Microsoft sign-in to one Entra tenant (GUID). Default: any tenant + personal accounts. */
+  MICROSOFT_TENANT_ID?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
   BOOTSTRAP_ADMIN_EMAIL?: string;
   APP_ENCRYPTION_KEY?: string;
   MAX_UPLOAD_BYTES?: string;
@@ -26,10 +32,10 @@ export type Db = DrizzleD1Database<typeof schema> & { $client: D1Database };
 export interface Deps {
   /** fetch used for R2 S3 API calls */
   s3Fetch: typeof fetch;
-  /** fetch used for the Google token endpoint */
-  googleFetch: typeof fetch;
-  /** resolver for Google's signing keys (jose JWKS function) */
-  googleJwks?: import("jose").JWTVerifyGetKey;
+  /** fetch used for OAuth token endpoints and the GitHub API */
+  oauthFetch: typeof fetch;
+  /** resolvers for ID-token signing keys (jose JWKS functions); remote JWKS when absent */
+  oauthJwks?: Partial<Record<"google" | "microsoft", import("jose").JWTVerifyGetKey>>;
   now: () => number;
 }
 

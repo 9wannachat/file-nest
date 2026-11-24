@@ -1,13 +1,26 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import { invitations, oauthStates, users, type User } from "../db/schema.ts";
+import { invitations, oauthStates, userIdentities, users, type User } from "../db/schema.ts";
 import type { AppEnv } from "../env.ts";
 import { HttpError } from "../lib/errors.ts";
 import { randomToken, sha256Hex, timingSafeEqual } from "../lib/crypto.ts";
 import { log } from "../lib/log.ts";
 import { appOrigin, requireSameOrigin } from "../auth/middleware.ts";
-import { buildAuthUrl, exchangeCode, googleJwks, pkcePair } from "../auth/oidc.ts";
+import {
+  buildAuthUrl,
+  callbackPath,
+  configured,
+  configuredMap,
+  credentials,
+  exchange,
+  isProvider,
+  pkcePair,
+  PROVIDERS,
+  type ExternalIdentity,
+  type Provider,
+} from "../auth/providers.ts";
+import { auditInsert } from "../services/audit.ts";
 import { clearSessionCookie, createSession, loadSession, revokeSession, setSessionCookie } from "../auth/session.ts";
 import {
   applyPasswordReset,
@@ -27,7 +40,7 @@ import {
 } from "../services/authn.ts";
 import { acceptInvitation, activeInvitation } from "../services/invitations.ts";
 import { liftExpiredBan, normalizeEmail, resolveLogin } from "../services/members.ts";
-import { getSettings, mfaRequired } from "../services/settings.ts";
+import { getSettings, mfaRequired, providerEnabled } from "../services/settings.ts";
 import { jsonBody } from "./util.ts";
 
 const STATE_TTL_MS = 10 * 60_000;
@@ -58,7 +71,7 @@ const settingsOf = (c: Context<AppEnv>) => getSettings(c.get("db"), c.get("confi
  *  - 2FA required by policy but not set up => session limited to enrollment
  *  - otherwise    => full session
  */
-async function finishLogin(c: Context<AppEnv>, user: User, method: "google" | "password" | "dev", returnTo: string) {
+async function finishLogin(c: Context<AppEnv>, user: User, method: Provider | "password" | "dev", returnTo: string) {
   const db = c.get("db");
   const now = c.get("deps").now();
   const config = c.get("config");
@@ -87,50 +100,68 @@ function clientIp(c: Context<AppEnv>) {
 
 authRoutes.get("/config", async (c) => {
   const s = await settingsOf(c);
+  const isConfigured = configuredMap(c.env);
   return c.json({
-    google: s.googleEnabled && !!c.env.GOOGLE_CLIENT_ID && !!c.env.GOOGLE_CLIENT_SECRET,
+    ...(Object.fromEntries(PROVIDERS.map((p) => [p, providerEnabled(s, p, isConfigured)])) as Record<Provider, boolean>),
     password: s.passwordEnabled,
     registration: s.registrationMode,
   });
 });
 
-// ---------- Google ----------
+// ---------- external providers (Google, Microsoft, GitHub) ----------
 
-authRoutes.get("/login", async (c) => {
-  const env = c.env;
-  const config = c.get("config");
+/**
+ * Create a single-use OAuth state bound to this browser (fn_oauth cookie) and
+ * return the provider's authorization URL. `linkUserId` turns the flow into
+ * "connect this provider to my signed-in account".
+ */
+export async function startOAuth(
+  c: Context<AppEnv>,
+  provider: Provider,
+  opts: { returnTo: string; invitationId?: string | null; linkUserId?: string | null },
+): Promise<string> {
+  const creds = credentials(c.env, provider)!;
+  const now = c.get("deps").now();
+  const state = randomToken(32);
+  const nonce = randomToken(32);
+  const { verifier, challenge } = await pkcePair();
+  await c.get("db").insert(oauthStates).values({
+    stateHash: await sha256Hex(state),
+    codeVerifier: verifier,
+    nonce,
+    returnTo: opts.returnTo,
+    expiresAt: now + STATE_TTL_MS,
+    invitationId: opts.invitationId ?? null,
+    provider,
+    linkUserId: opts.linkUserId ?? null,
+  });
+  setCookie(c, OAUTH_COOKIE, state, { httpOnly: true, secure: c.get("config").secureCookies, sameSite: "Lax", path: "/auth", maxAge: STATE_TTL_MS / 1000 });
+  return buildAuthUrl(c.env, provider, { clientId: creds.clientId, redirectUri: `${appOrigin(c)}${callbackPath(provider)}`, state, nonce, challenge });
+}
+
+async function oauthLogin(c: Context<AppEnv>, provider: Provider) {
   const settings = await settingsOf(c);
-  if (!settings.googleEnabled) return c.redirect("/login?error=method_disabled", 302);
-  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
-    log.error("config.oauth_missing");
+  if (!providerEnabled(settings, provider, { ...configuredMap(c.env), [provider]: true })) return c.redirect("/login?error=method_disabled", 302);
+  if (!configured(c.env, provider)) {
+    log.error("config.oauth_missing", { provider });
     return c.redirect("/login?error=not_configured", 302);
   }
   const db = c.get("db");
   const now = c.get("deps").now();
-  // Optional: Google sign-up through an invitation link.
+  // Optional: sign-up through an invitation link.
   const inviteToken = c.req.query("invite");
   let invitationId: string | null = null;
   if (inviteToken) {
     const inv = await activeInvitation(db, inviteToken, now);
     if (!inv) return c.redirect("/login?error=invite_invalid", 302);
+    // A provider that does not verify emails may only claim an invitation bound to an address.
+    if (provider === "microsoft" && !inv.email) return c.redirect("/login?error=invite_needs_email", 302);
     invitationId = inv.id;
   }
-  const state = randomToken(32);
-  const nonce = randomToken(32);
-  const { verifier, challenge } = await pkcePair();
-  await db.insert(oauthStates).values({
-    stateHash: await sha256Hex(state),
-    codeVerifier: verifier,
-    nonce,
-    returnTo: safeReturnTo(c.req.query("return_to")),
-    expiresAt: now + STATE_TTL_MS,
-    invitationId,
-  });
-  setCookie(c, OAUTH_COOKIE, state, { httpOnly: true, secure: config.secureCookies, sameSite: "Lax", path: "/auth", maxAge: STATE_TTL_MS / 1000 });
-  return c.redirect(buildAuthUrl({ clientId: env.GOOGLE_CLIENT_ID, redirectUri: `${appOrigin(c)}/auth/callback`, state, nonce, challenge }), 302);
-});
+  return c.redirect(await startOAuth(c, provider, { returnTo: safeReturnTo(c.req.query("return_to")), invitationId }), 302);
+}
 
-authRoutes.get("/callback", async (c) => {
+async function oauthCallback(c: Context<AppEnv>, provider: Provider) {
   const env = c.env;
   const db = c.get("db");
   const deps = c.get("deps");
@@ -149,16 +180,19 @@ authRoutes.get("/callback", async (c) => {
     .where(eq(oauthStates.stateHash, await sha256Hex(state)))
     .returning()
     .get();
-  if (!pending || pending.expiresAt < now) return c.redirect("/login?error=invalid_state", 302);
+  if (!pending || pending.expiresAt < now || pending.provider !== provider) return c.redirect("/login?error=invalid_state", 302);
+  const linking = !!pending.linkUserId;
+  const fail = (code: string) => c.redirect(linking ? `/settings?link_error=${code}` : `/login?error=${code}`, 302);
 
-  let identity;
+  const settings = await settingsOf(c);
+  const creds = credentials(env, provider);
+  if (!creds || !providerEnabled(settings, provider, configuredMap(env))) return fail("method_disabled");
+
+  let identity: ExternalIdentity;
   try {
-    identity = await exchangeCode({
-      fetchImpl: deps.googleFetch,
-      jwks: deps.googleJwks ?? googleJwks(),
-      clientId: env.GOOGLE_CLIENT_ID ?? "",
-      clientSecret: env.GOOGLE_CLIENT_SECRET ?? "",
-      redirectUri: `${appOrigin(c)}/auth/callback`,
+    identity = await exchange(env, deps, provider, {
+      ...creds,
+      redirectUri: `${appOrigin(c)}${callbackPath(provider)}`,
       code,
       verifier: pending.codeVerifier,
       nonce: pending.nonce,
@@ -166,17 +200,27 @@ authRoutes.get("/callback", async (c) => {
     });
   } catch (e) {
     const codeName = e instanceof HttpError ? e.code : "oauth_failed";
-    log.warn("auth.callback_failed", { code: codeName });
-    return c.redirect(`/login?error=${codeName === "email_not_verified" ? "email_not_verified" : "signin_failed"}`, 302);
+    log.warn("auth.callback_failed", { provider, code: codeName });
+    return fail(codeName === "email_not_verified" ? "email_not_verified" : "signin_failed");
   }
 
-  const settings = await settingsOf(c);
+  if (linking) return finishLink(c, identity, pending.linkUserId!, now);
+
   let outcome = await resolveLogin(db, identity, config, env.BOOTSTRAP_ADMIN_EMAIL, now);
   if (!outcome.ok && outcome.reason === "not_invited" && pending.invitationId && settings.registrationMode === "invite") {
     const inv = await db.select().from(invitations).where(eq(invitations.id, pending.invitationId)).get();
     try {
       if (!inv) throw new HttpError(410, "invite_invalid", "invalid");
-      const user = await acceptInvitation(db, inv, { email: identity.email, name: identity.name, googleSub: identity.sub }, settings.defaultQuotaBytes, now);
+      // Unverified provider emails never become the account email: use the invitation's address.
+      if (!identity.emailVerified && !inv.email) throw new HttpError(403, "invite_needs_email", "invalid");
+      const email = identity.emailVerified ? identity.email : inv.email!;
+      const user = await acceptInvitation(
+        db,
+        inv,
+        { email, name: identity.name, identity: { provider, subject: identity.subject, email: identity.email } },
+        settings.defaultQuotaBytes,
+        now,
+      );
       outcome = { ok: true, user };
     } catch (e) {
       const code = e instanceof HttpError ? e.code : "invite_invalid";
@@ -184,11 +228,48 @@ authRoutes.get("/callback", async (c) => {
     }
   }
   if (!outcome.ok) {
-    log.info("auth.denied", { reason: outcome.reason });
+    log.info("auth.denied", { provider, reason: outcome.reason });
     return c.redirect(`/not-authorized?reason=${outcome.reason}`, 302);
   }
-  const r = await finishLogin(c, outcome.user, "google", safeReturnTo(pending.returnTo));
+  const r = await finishLogin(c, outcome.user, provider, safeReturnTo(pending.returnTo));
   return c.redirect(r.status === "mfa_required" ? `/mfa?return_to=${encodeURIComponent(r.returnTo)}` : r.returnTo, 302);
+}
+
+/** "Connect" from the account page: only for the same signed-in member who started it. */
+async function finishLink(c: Context<AppEnv>, identity: ExternalIdentity, linkUserId: string, now: number) {
+  const db = c.get("db");
+  const auth = await loadSession(c);
+  if (!auth || auth.user.id !== linkUserId || auth.user.status !== "active") return c.redirect("/login?error=invalid_state", 302);
+  const owner = await db
+    .select({ userId: userIdentities.userId })
+    .from(userIdentities)
+    .where(and(eq(userIdentities.provider, identity.provider), eq(userIdentities.subject, identity.subject)))
+    .get();
+  if (owner) return c.redirect(`/settings?link_error=${owner.userId === linkUserId ? "already_linked" : "identity_in_use"}`, 302);
+  try {
+    await db.batch([
+      db.insert(userIdentities).values({ provider: identity.provider, subject: identity.subject, userId: linkUserId, email: identity.email || null, createdAt: now }),
+      auditInsert(db, now, linkUserId, "account.identity_link", "user", linkUserId, { provider: identity.provider }),
+    ]);
+  } catch {
+    // UNIQUE(user_id, provider) or a concurrent link of the same identity.
+    return c.redirect("/settings?link_error=already_linked", 302);
+  }
+  return c.redirect(`/settings?linked=${identity.provider}`, 302);
+}
+
+// Google keeps its original paths (the redirect URI registered in Google Cloud).
+authRoutes.get("/login", (c) => oauthLogin(c, "google"));
+authRoutes.get("/callback", (c) => oauthCallback(c, "google"));
+authRoutes.get("/login/:provider", (c) => {
+  const p = c.req.param("provider");
+  if (!isProvider(p)) throw new HttpError(404, "not_found", "Not found");
+  return oauthLogin(c, p);
+});
+authRoutes.get("/callback/:provider", (c) => {
+  const p = c.req.param("provider");
+  if (!isProvider(p) || p === "google") throw new HttpError(404, "not_found", "Not found");
+  return oauthCallback(c, p);
 });
 
 // ---------- email + password ----------
@@ -256,7 +337,7 @@ authRoutes.post("/mfa/verify", requireSameOrigin, async (c) => {
   const prev = await loadSession(c);
   if (prev) await revokeSession(db, prev.session.id);
   const { token } = await createSession(db, user.id, now, {
-    authMethod: challenge.authMethod as "google" | "password",
+    authMethod: challenge.authMethod as Provider | "password",
     userAgent: c.req.header("User-Agent"),
     ttlMs: settings.sessionTtlDays * 24 * 3600_000,
   });
@@ -272,6 +353,7 @@ authRoutes.get("/invite/:token", async (c) => {
   const settings = await settingsOf(c);
   const inv = settings.registrationMode === "invite" ? await activeInvitation(c.get("db"), c.req.param("token"), now) : null;
   if (!inv) return c.json({ valid: false }, 404);
+  const isConfigured = configuredMap(c.env);
   return c.json({
     valid: true,
     email: inv.email,
@@ -279,7 +361,13 @@ authRoutes.get("/invite/:token", async (c) => {
     expiresAt: inv.expiresAt,
     // Password sign-up only for email-bound invitations: an open link must not let
     // someone claim an arbitrary address that a Google sign-in would later attach to.
-    methods: { google: settings.googleEnabled && !!c.env.GOOGLE_CLIENT_ID, password: settings.passwordEnabled && !!inv.email },
+    methods: {
+      google: providerEnabled(settings, "google", isConfigured),
+      github: providerEnabled(settings, "github", isConfigured),
+      // Microsoft does not verify emails: only for invitations bound to an address.
+      microsoft: providerEnabled(settings, "microsoft", isConfigured) && !!inv.email,
+      password: settings.passwordEnabled && !!inv.email,
+    },
   });
 });
 
@@ -297,7 +385,7 @@ authRoutes.post("/invite/:token/register", requireSameOrigin, async (c) => {
   const name = typeof b.name === "string" && b.name.trim() ? b.name.trim().slice(0, 100) : null;
   const pw = validatePassword(b.password, email);
   const h = await makePasswordHash(c.env, pw);
-  const user = await acceptInvitation(db, inv, { email, name, googleSub: null, ...h }, settings.defaultQuotaBytes, now);
+  const user = await acceptInvitation(db, inv, { email, name, ...h }, settings.defaultQuotaBytes, now);
   return c.json(await finishLogin(c, user, "password", "/"), 201);
 });
 
@@ -341,7 +429,13 @@ authRoutes.get("/dev-login", async (c) => {
   const email = (c.req.query("email") ?? c.env.BOOTSTRAP_ADMIN_EMAIL ?? "").trim().toLowerCase();
   const db = c.get("db");
   const now = c.get("deps").now();
-  const outcome = await resolveLogin(db, { sub: `dev:${email}`, email, name: email.split("@")[0] ?? email }, config, c.env.BOOTSTRAP_ADMIN_EMAIL, now);
+  const outcome = await resolveLogin(
+    db,
+    { provider: "dev", subject: `dev:${email}`, email, emailVerified: true, name: email.split("@")[0] ?? email },
+    config,
+    c.env.BOOTSTRAP_ADMIN_EMAIL,
+    now,
+  );
   if (!outcome.ok) return c.redirect(`/not-authorized?reason=${outcome.reason}`, 302);
   const r = await finishLogin(c, outcome.user, "dev", safeReturnTo(c.req.query("return_to")));
   return c.redirect(r.status === "mfa_required" ? `/mfa?return_to=${encodeURIComponent(r.returnTo)}` : r.returnTo, 302);

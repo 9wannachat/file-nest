@@ -102,7 +102,7 @@ describe("ban / unban", () => {
 
 describe("settings", () => {
   it("validates and takes effect", async () => {
-    expect((await call(admin, "PUT", "/api/admin/settings", { googleEnabled: false, passwordEnabled: false })).status).toBe(400);
+    expect((await call(admin, "PUT", "/api/admin/settings", { googleEnabled: false, microsoftEnabled: false, githubEnabled: false, passwordEnabled: false })).status).toBe(400);
     expect((await call(admin, "PUT", "/api/admin/settings", { maxUploadBytes: 999_999_999_999 })).status).toBe(400); // above deploy cap
     expect((await call(admin, "PUT", "/api/admin/settings", { unknownKey: 1 })).status).toBe(400);
     expect((await call(admin, "PUT", "/api/admin/settings", { maxUploadBytes: 5 })).status).toBe(200);
@@ -202,6 +202,6 @@ describe("security-audit regressions", () => {
 
   it("cannot switch off every working sign-in method", async () => {
     const { updateSettings } = await import("../../src/worker/services/settings.ts");
-    await expect(updateSettings(t.ctx.db, t.ctx.config, admin.user.id, { passwordEnabled: false }, Date.now(), false)).rejects.toThrow(/working sign-in/);
+    await expect(updateSettings(t.ctx.db, t.ctx.config, admin.user.id, { passwordEnabled: false }, Date.now(), { google: false, microsoft: false, github: false })).rejects.toThrow(/working sign-in/);
   });
 });

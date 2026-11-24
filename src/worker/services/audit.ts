@@ -5,6 +5,8 @@ export type AuditAction =
   | "member.invite"
   | "member.update"
   | "member.bootstrap_admin"
+  | "account.identity_link"
+  | "account.identity_unlink"
   | "share.member_grant"
   | "share.member_revoke"
   | "share.link_create"

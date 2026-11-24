@@ -1,7 +1,7 @@
 import { Save } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import type { SystemSettings } from "@shared/types";
+import { PROVIDER_LABELS, type SignInProvider, type SystemSettings } from "@shared/types";
 import { useReauth } from "@/components/reauth";
 import { ErrorState, Spinner } from "@/components/states";
 import { Button } from "@/components/ui/button";
@@ -48,7 +48,7 @@ function Choice<T extends string | number>({ id, value, options, onChange }: { i
 
 export function AdminSettingsPage() {
   const run = useReauth();
-  const { data, error, loading, reload } = useApi<{ settings: SystemSettings; limits: { maxUploadBytes: number } }>("/api/admin/settings");
+  const { data, error, loading, reload } = useApi<{ settings: SystemSettings; limits: { maxUploadBytes: number }; configured: Record<SignInProvider, boolean> }>("/api/admin/settings");
   const [s, setS] = useState<SystemSettings | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -90,9 +90,15 @@ export function AdminSettingsPage() {
           <Row id="s-reg" label="Registration" hint="Invitation links let new people create accounts. Closed stops all new sign-ups.">
             <Choice id="s-reg" value={s.registrationMode} options={[["invite", "Invitation links"], ["closed", "Closed"]]} onChange={(v) => set("registrationMode", v)} />
           </Row>
-          <Row id="s-google" label="Sign in with Google">
-            <Switch id="s-google" checked={s.googleEnabled} onCheckedChange={(v) => set("googleEnabled", v)} />
-          </Row>
+          {(["google", "microsoft", "github"] as const).map((p) => {
+            const key = `${p}Enabled` as const;
+            const ok = data.configured[p];
+            return (
+              <Row key={p} id={`s-${p}`} label={`Sign in with ${PROVIDER_LABELS[p]}`} hint={ok ? undefined : "Not configured: set its client ID and secret on the Worker first."}>
+                <Switch id={`s-${p}`} checked={ok && s[key]} disabled={!ok} onCheckedChange={(v) => set(key, v)} />
+              </Row>
+            );
+          })}
           <Row id="s-pw" label="Sign in with email and password">
             <Switch id="s-pw" checked={s.passwordEnabled} onCheckedChange={(v) => set("passwordEnabled", v)} />
           </Row>

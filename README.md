@@ -53,7 +53,7 @@ pnpm dev
 - `setup:local` creates `wrangler.jsonc` and `.dev.vars` (both git-ignored; a fresh `APP_ENCRYPTION_KEY` is generated), applies D1 migrations locally, and adds a local storage target.
 - `pnpm dev` starts a **fake R2** on `http://localhost:9000` (files in `.dev-data/`) and the app on `http://localhost:8788`.
 - Open `http://localhost:8788/auth/dev-login` to sign in as `BOOTSTRAP_ADMIN_EMAIL` without Google. Dev login only works when `ENVIRONMENT=development`, `DEV_AUTH=1` **and** the host is localhost.
-- To use real Google locally, put your client ID/secret in `.dev.vars` and add `http://localhost:8788/auth/callback` as an authorized redirect URI.
+- To use real Google locally, put your client ID/secret in `.dev.vars` and add `http://localhost:8788/auth/callback` as an authorized redirect URI (Microsoft/GitHub: `/auth/callback/microsoft`, `/auth/callback/github`).
 
 ## Deploy to Cloudflare (first R2 account)
 
@@ -94,6 +94,14 @@ pnpm db:migrate:remote
 ```bash
 pnpm exec wrangler secret put GOOGLE_CLIENT_SECRET
 ```
+
+### 3b. Optional: Microsoft and GitHub sign-in
+
+Each provider appears on the sign-in page only when its client ID **and** secret are set; Admins can still switch each one off in *Admin Console → Settings*.
+
+- **Microsoft (Entra ID)**: Azure portal → App registrations → New registration. Supported account types: *any organizational directory and personal Microsoft accounts* (or your tenant only). Redirect URI (Web): `APP_ORIGIN + /auth/callback/microsoft`. Create a client secret. Set `vars.MICROSOFT_CLIENT_ID`, optionally `vars.MICROSOFT_TENANT_ID` (GUID, restricts sign-in to that tenant), then `pnpm exec wrangler secret put MICROSOFT_CLIENT_SECRET`.
+  Microsoft does not guarantee that the email in its token is verified, so a Microsoft account never attaches to an existing member by email. New members join with an invitation link **bound to their email**; existing members connect Microsoft from *Settings → Connected sign-in methods*.
+- **GitHub**: Settings → Developer settings → OAuth Apps → New. Callback URL: `APP_ORIGIN + /auth/callback/github`. Set `vars.GITHUB_CLIENT_ID`, then `pnpm exec wrangler secret put GITHUB_CLIENT_SECRET`. FileNest uses the account's **primary, verified** email.
 
 ### 4. Encryption key (for re-copyable share links)
 

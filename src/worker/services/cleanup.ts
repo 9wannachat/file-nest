@@ -11,6 +11,7 @@ import { log } from "../lib/log.ts";
 import { purgeExpiredSessions } from "../auth/session.ts";
 import { purgeAuthLeftovers } from "./authn.ts";
 import { getSettings } from "./settings.ts";
+import { HAS_SIGN_IN_SQL } from "./members.ts";
 import { purgeTrashRoots } from "./drive.ts";
 import { expireSession } from "./uploads.ts";
 import { bucketById, type StorageCtx } from "./storage.ts";
@@ -112,7 +113,7 @@ export async function runCleanup(ctx: StorageCtx) {
   await purgeAuthLeftovers(db, now);
   // Lift timed bans that have ended.
   await db.run(sql`UPDATE users SET
-      status = CASE WHEN google_sub IS NOT NULL OR password_hash IS NOT NULL THEN 'active' ELSE 'invited' END,
+      status = CASE WHEN ${HAS_SIGN_IN_SQL} THEN 'active' ELSE 'invited' END,
       banned_reason = NULL, banned_until = NULL, banned_by = NULL, updated_at = ${now}
     WHERE status = 'disabled' AND banned_until IS NOT NULL AND banned_until <= ${now}`);
   await db.delete(shareUnlockAttempts).where(lt(shareUnlockAttempts.updatedAt, now - 2 * 24 * 3600_000));

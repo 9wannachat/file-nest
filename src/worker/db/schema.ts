@@ -51,7 +51,24 @@ export const oauthStates = sqliteTable("oauth_states", {
   returnTo: text("return_to").notNull(),
   expiresAt: integer("expires_at").notNull(),
   invitationId: text("invitation_id"),
+  provider: text("provider").notNull(),
+  linkUserId: text("link_user_id"),
 });
+
+export type IdentityProvider = "google" | "microsoft" | "github" | "dev";
+
+/** External sign-in identities (0006). users.google_sub is legacy and unused. */
+export const userIdentities = sqliteTable(
+  "user_identities",
+  {
+    provider: text("provider").$type<IdentityProvider>().notNull(),
+    subject: text("subject").notNull(),
+    userId: text("user_id").notNull(),
+    email: text("email"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.provider, t.subject] })],
+);
 
 export const storageTargets = sqliteTable("storage_targets", {
   id: text("id").primaryKey(),

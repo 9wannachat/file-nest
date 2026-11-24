@@ -10,6 +10,14 @@ APP_ORIGIN=http://localhost:8788
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=replace-me
 
+# Optional: Microsoft (Entra ID) and GitHub sign-in. Leave unset to hide them.
+# Redirect URIs: http://localhost:8788/auth/callback/microsoft and /auth/callback/github
+# MICROSOFT_CLIENT_ID=
+# MICROSOFT_CLIENT_SECRET=
+# MICROSOFT_TENANT_ID=   # optional GUID: only accounts from this tenant
+# GITHUB_CLIENT_ID=
+# GITHUB_CLIENT_SECRET=
+
 BOOTSTRAP_ADMIN_EMAIL=admin@example.test
 
 # 32 random bytes, base64. Generate: openssl rand -base64 32

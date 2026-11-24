@@ -69,7 +69,7 @@ export function InvitationsPage() {
         <CardHeader>
           <CardTitle>Create an invitation link</CardTitle>
           <CardDescription>
-            Links bound to an email can be used with Google or a password for that address. Open links (no email) accept Google sign-in only. Links are
+            Links bound to an email can be used with Google, Microsoft, GitHub or a password for that address. Open links (no email) accept Google or GitHub sign-in only. Links are
             secret: share them only with the people you invite.
           </CardDescription>
         </CardHeader>

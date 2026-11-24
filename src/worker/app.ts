@@ -11,7 +11,7 @@ import { shareRoutes } from "./routes/share.ts";
 export function defaultDeps(): Deps {
   return {
     s3Fetch: (input, init) => fetch(input, init),
-    googleFetch: (input, init) => fetch(input, init),
+    oauthFetch: (input, init) => fetch(input, init),
     now: () => Date.now(),
   };
 }

@@ -2,7 +2,7 @@ import { ArrowLeft, Ban, Copy, KeyRound, LogOut, ShieldOff, ShieldCheck, Undo2 }
 import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router";
 import { toast } from "sonner";
-import type { AdminMember, AuditEvent } from "@shared/types";
+import { PROVIDER_LABELS, type AdminMember, type AuditEvent } from "@shared/types";
 import { useMe } from "@/auth";
 import { ConfirmDialog } from "@/components/dialogs";
 import { useReauth } from "@/components/reauth";
@@ -140,7 +140,11 @@ export function MemberDetailPage() {
           <div>
             <div className="text-muted-foreground">Sign-in methods</div>
             <div className="flex flex-wrap gap-1">
-              {m.googleLinked ? <Badge variant="outline">Google</Badge> : null}
+              {m.identities.map((p) => (
+                <Badge key={p} variant="outline">
+                  {PROVIDER_LABELS[p]}
+                </Badge>
+              ))}
               {m.hasPassword ? <Badge variant="outline">Password</Badge> : null}
               {m.mfaEnabled ? (
                 <Badge variant="secondary">

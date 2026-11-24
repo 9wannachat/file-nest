@@ -136,8 +136,14 @@ export interface ApiTokenInfo {
   revokedAt: number | null;
 }
 
+export type SignInProvider = "google" | "microsoft" | "github";
+export const SIGN_IN_PROVIDERS: SignInProvider[] = ["google", "microsoft", "github"];
+export const PROVIDER_LABELS: Record<SignInProvider, string> = { google: "Google", microsoft: "Microsoft", github: "GitHub" };
+
 export interface AuthConfig {
   google: boolean;
+  microsoft: boolean;
+  github: boolean;
   password: boolean;
   registration: "invite" | "closed";
 }
@@ -146,7 +152,9 @@ export interface AccountInfo {
   email: string;
   name: string | null;
   hasPassword: boolean;
-  googleLinked: boolean;
+  identities: SignInProvider[];
+  /** Providers the member could connect right now (enabled and configured). */
+  availableProviders: SignInProvider[];
   mfa: { enabled: boolean; enabledAt: number | null; required: boolean; recoveryCodesRemaining: number };
   passwordUpdatedAt: number | null;
   reauthUntil: number | null;
@@ -156,6 +164,8 @@ export interface AccountInfo {
 export interface SystemSettings {
   registrationMode: "invite" | "closed";
   googleEnabled: boolean;
+  microsoftEnabled: boolean;
+  githubEnabled: boolean;
   passwordEnabled: boolean;
   mfaPolicy: "optional" | "admins" | "all";
   defaultQuotaBytes: number;
@@ -168,7 +178,7 @@ export interface SystemSettings {
 
 export interface AdminMember extends Member {
   hasPassword: boolean;
-  googleLinked: boolean;
+  identities: SignInProvider[];
   mfaEnabled: boolean;
   bannedReason: string | null;
   bannedUntil: number | null;

@@ -4,7 +4,7 @@
  */
 import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { Hono } from "hono";
-import { mfaChallenges, sessions, users } from "../db/schema.ts";
+import { mfaChallenges, sessions, userIdentities, users } from "../db/schema.ts";
 import type { AppEnv } from "../env.ts";
 import { HttpError } from "../lib/errors.ts";
 import { requireRecentAuth, sessionOf } from "../auth/middleware.ts";
@@ -24,7 +24,10 @@ import {
   verifySecondFactor,
 } from "../services/authn.ts";
 import { auditInsert } from "../services/audit.ts";
-import { getSettings, mfaRequired } from "../services/settings.ts";
+import { getSettings, mfaRequired, providerEnabled } from "../services/settings.ts";
+import { identitiesOf } from "../services/members.ts";
+import { configuredMap, isProvider, PROVIDERS, type Provider } from "../auth/providers.ts";
+import { startOAuth } from "./auth.ts";
 import { idParam, jsonBody, now } from "./util.ts";
 
 export const account = new Hono<AppEnv>();
@@ -50,7 +53,8 @@ account.get("/", async (c) => {
     email: user.email,
     name: user.name,
     hasPassword: !!user.passwordHash,
-    googleLinked: !!user.googleSub && !user.googleSub.startsWith("dev:"),
+    identities: await identitiesOf(db, user.id),
+    availableProviders: PROVIDERS.filter((p) => providerEnabled(settings, p, configuredMap(c.env))),
     mfa: {
       enabled: !!user.totpEnabledAt,
       enabledAt: user.totpEnabledAt,
@@ -68,6 +72,59 @@ account.get("/", async (c) => {
       current: s.id === session.id,
     })),
   });
+});
+
+// ---------- connected sign-in methods ----------
+
+function providerParam(c: { req: { param: (k: "provider") => string } }): Provider {
+  const p = c.req.param("provider");
+  if (!isProvider(p)) throw new HttpError(404, "not_found", "Not found");
+  return p;
+}
+
+/** Start "connect <provider>": returns the provider URL; the callback links it to this member. */
+account.post("/identities/:provider", async (c) => {
+  const t = now(c);
+  requireRecentAuth(c, t);
+  const provider = providerParam(c);
+  const user = await freshUser(c);
+  const settings = await getSettings(c.get("db"), c.get("config"));
+  if (!providerEnabled(settings, provider, configuredMap(c.env))) throw new HttpError(403, "method_disabled", "This sign-in method is turned off");
+  if ((await identitiesOf(c.get("db"), user.id)).includes(provider)) throw new HttpError(409, "already_linked", "Already connected");
+  return c.json({ url: await startOAuth(c, provider, { returnTo: "/settings", linkUserId: user.id }) });
+});
+
+/** Disconnect a provider, but never the last way to sign in (one conditional statement). */
+account.delete("/identities/:provider", async (c) => {
+  const t = now(c);
+  requireRecentAuth(c, t);
+  const provider = providerParam(c);
+  const db = c.get("db");
+  const user = await freshUser(c);
+  const settings = await getSettings(db, c.get("config"));
+  // Only methods that work today count as "another way to sign in".
+  const usable = PROVIDERS.filter((p) => p !== provider && providerEnabled(settings, p, configuredMap(c.env)));
+  const passwordUsable = settings.passwordEnabled ? 1 : 0;
+  const others = usable.length ? sql`o.provider IN (${sql.join(usable.map((p) => sql`${p}`), sql`, `)})` : sql`0`;
+  const res = await db.run(sql`
+    DELETE FROM user_identities
+    WHERE user_id = ${user.id} AND provider = ${provider}
+      AND (
+        (${passwordUsable} = 1 AND EXISTS (SELECT 1 FROM users WHERE users.id = ${user.id} AND users.password_hash IS NOT NULL))
+        OR EXISTS (SELECT 1 FROM user_identities o WHERE o.user_id = ${user.id} AND ${others})
+      )`);
+  if (res.meta.changes !== 1) {
+    const has = await db.select({ p: userIdentities.provider }).from(userIdentities).where(and(eq(userIdentities.userId, user.id), eq(userIdentities.provider, provider))).get();
+    if (!has) throw new HttpError(404, "not_found", "Not connected");
+    throw new HttpError(409, "last_method", "Add a password or another sign-in method first");
+  }
+  // Someone disconnecting a compromised provider account should also cut its sessions.
+  const { session } = sessionOf(c);
+  await db.batch([
+    db.delete(sessions).where(and(eq(sessions.userId, user.id), eq(sessions.authMethod, provider), ne(sessions.id, session.id))),
+    auditInsert(db, t, user.id, "account.identity_unlink", "user", user.id, { provider }),
+  ]);
+  return c.json({ ok: true });
 });
 
 /** Step-up: confirm with password and/or a 2FA code. */

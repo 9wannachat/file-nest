@@ -18,6 +18,7 @@ import { createPasswordReset, disableTotp } from "../services/authn.ts";
 import { createInvitation, listInvitations, revokeInvitation } from "../services/invitations.ts";
 import * as members from "../services/members.ts";
 import { getSettings, updateSettings } from "../services/settings.ts";
+import { configuredMap, isProvider } from "../auth/providers.ts";
 import * as storage from "../services/storage.ts";
 import { idParam, jsonBody, now, storageCtx } from "./util.ts";
 
@@ -92,11 +93,11 @@ admin.get("/overview", async (c) => {
 
 // ---------- members ----------
 
-function memberRow(r: { u: User; usedBytes: number; fileCount: number; sessionCount: number }) {
+function memberRow(r: { u: User; usedBytes: number; fileCount: number; sessionCount: number; identities: string | null }) {
   return {
     ...members.memberDto(r.u),
     hasPassword: !!r.u.passwordHash,
-    googleLinked: !!r.u.googleSub && !r.u.googleSub.startsWith("dev:"),
+    identities: (r.identities ?? "").split(",").filter(isProvider).sort(),
     mfaEnabled: !!r.u.totpEnabledAt,
     bannedReason: r.u.bannedReason,
     bannedUntil: r.u.bannedUntil,
@@ -113,6 +114,7 @@ const memberSelect = (db: AppEnv["Variables"]["db"], t: number) =>
       usedBytes: sql<number>`(SELECT coalesce(sum(size), 0) FROM files f WHERE f.owner_id = "users"."id")`,
       fileCount: sql<number>`(SELECT count(*) FROM files f WHERE f.owner_id = "users"."id")`,
       sessionCount: sql<number>`(SELECT count(*) FROM sessions s WHERE s.user_id = "users"."id" AND s.expires_at > ${t})`,
+      identities: sql<string | null>`(SELECT group_concat(i.provider) FROM user_identities i WHERE i.user_id = "users"."id" AND i.provider <> 'dev')`,
     })
     .from(users);
 
@@ -237,7 +239,7 @@ admin.post("/members/:id/unban", async (c) => {
   const t = now(c);
   const actor = authOf(c).user;
   const u = await target(c);
-  const status = u.googleSub || u.passwordHash ? "active" : "invited";
+  const status = (await members.hasSignInMethod(db, u)) ? "active" : "invited";
   await db.batch([
     db.update(users).set({ status, bannedReason: null, bannedUntil: null, bannedBy: null, updatedAt: t }).where(eq(users.id, u.id)),
     auditInsert(db, t, actor.id, "member.unban", "user", u.id),
@@ -281,7 +283,7 @@ admin.post("/members/:id/password-reset", async (c) => {
   const u = await target(c);
   if (u.status === "disabled") throw new HttpError(409, "member_disabled", "Unban the member first");
   // Limit what an Admin can do with someone else's credentials:
-  if (!u.passwordHash) throw new HttpError(409, "no_password", "This member signs in with Google; there is no password to reset");
+  if (!u.passwordHash) throw new HttpError(409, "no_password", "This member signs in with an external provider; there is no password to reset");
   if (u.totpEnabledAt) throw new HttpError(409, "mfa_enabled", "This member uses 2FA; they can still sign in with their authenticator and change it themselves");
   return c.json(await createPasswordReset(c.get("db"), u, authOf(c).user.id, appOrigin(c), now(c)), 201);
 });
@@ -420,13 +422,12 @@ admin.delete("/public-links/:id", async (c) => {
 
 admin.get("/settings", async (c) => {
   const config = c.get("config");
-  return c.json({ settings: await getSettings(c.get("db"), config), limits: { maxUploadBytes: config.maxUploadBytes } });
+  return c.json({ settings: await getSettings(c.get("db"), config), limits: { maxUploadBytes: config.maxUploadBytes }, configured: configuredMap(c.env) });
 });
 admin.put("/settings", async (c) => {
   recent(c);
   const b = await jsonBody(c);
-  const googleConfigured = !!c.env.GOOGLE_CLIENT_ID && !!c.env.GOOGLE_CLIENT_SECRET;
-  return c.json({ settings: await updateSettings(c.get("db"), c.get("config"), authOf(c).user.id, b, now(c), googleConfigured) });
+  return c.json({ settings: await updateSettings(c.get("db"), c.get("config"), authOf(c).user.id, b, now(c), configuredMap(c.env)) });
 });
 
 // ---------- storage ----------

@@ -2,7 +2,7 @@ import { Search, ShieldCheck, UserPlus } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
-import type { AdminMember } from "@shared/types";
+import { PROVIDER_LABELS, type AdminMember } from "@shared/types";
 import { ErrorState, Spinner } from "@/components/states";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -36,7 +36,7 @@ export function MembersPage() {
     e.preventDefault();
     try {
       await api("/api/admin/members", { method: "POST", body: { email } });
-      toast.success(`${email} can now sign in with Google`);
+      toast.success(`${email} can now sign in with Google or GitHub`);
       setEmail("");
       void reload();
     } catch (err) {
@@ -112,7 +112,11 @@ export function MembersPage() {
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
                     <span className="flex flex-wrap gap-1">
-                      {m.googleLinked ? <Badge variant="outline">Google</Badge> : null}
+                      {m.identities.map((p) => (
+                        <Badge key={p} variant="outline">
+                          {PROVIDER_LABELS[p]}
+                        </Badge>
+                      ))}
                       {m.hasPassword ? <Badge variant="outline">Password</Badge> : null}
                       {m.mfaEnabled ? (
                         <Badge variant="secondary">
@@ -141,13 +145,13 @@ export function MembersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Allow a Google account</CardTitle>
-          <CardDescription>Adds an email to the allowlist so it can sign in with Google. For other sign-up options, use an invitation link.</CardDescription>
+          <CardTitle>Allow an email address</CardTitle>
+          <CardDescription>Adds an email to the allowlist so it can sign in with Google or GitHub (verified email). For Microsoft or a password, use an invitation link bound to the email.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={preInvite} className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <div className="grid flex-1 gap-2">
-              <Label htmlFor="allow-email">Google email</Label>
+              <Label htmlFor="allow-email">Email</Label>
               <Input id="allow-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" />
             </div>
             <Button type="submit" variant="outline">

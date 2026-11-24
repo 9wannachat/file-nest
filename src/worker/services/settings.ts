@@ -7,10 +7,13 @@ import { systemSettings } from "../db/schema.ts";
 import type { AppConfig, Db, Env } from "../env.ts";
 import { badRequest } from "../lib/errors.ts";
 import { auditInsert } from "./audit.ts";
+import { PROVIDERS, type Provider } from "../auth/providers.ts";
 
 export interface SystemSettings {
   registrationMode: "invite" | "closed";
   googleEnabled: boolean;
+  microsoftEnabled: boolean;
+  githubEnabled: boolean;
   passwordEnabled: boolean;
   mfaPolicy: "optional" | "admins" | "all";
   defaultQuotaBytes: number;
@@ -25,6 +28,8 @@ export function defaultSettings(config: AppConfig): SystemSettings {
   return {
     registrationMode: "invite",
     googleEnabled: true,
+    microsoftEnabled: true,
+    githubEnabled: true,
     passwordEnabled: true,
     mfaPolicy: "admins",
     defaultQuotaBytes: config.defaultQuotaBytes,
@@ -43,6 +48,8 @@ const V: { [K in keyof SystemSettings]: (v: unknown, config: AppConfig) => Syste
     return v;
   },
   googleEnabled: (v) => bool(v, "googleEnabled"),
+  microsoftEnabled: (v) => bool(v, "microsoftEnabled"),
+  githubEnabled: (v) => bool(v, "githubEnabled"),
   passwordEnabled: (v) => bool(v, "passwordEnabled"),
   mfaPolicy: (v) => {
     if (v !== "optional" && v !== "admins" && v !== "all") throw badRequest("invalid_setting", "mfaPolicy must be optional, admins or all");
@@ -82,7 +89,19 @@ export async function getSettings(db: Db, config: AppConfig): Promise<SystemSett
   return s;
 }
 
-export async function updateSettings(db: Db, config: AppConfig, actorId: string, patch: Record<string, unknown>, now: number, googleConfigured = true) {
+/** A provider is usable only when the Admin turned it on and its secrets are set. */
+export function providerEnabled(s: SystemSettings, p: Provider, isConfigured: Record<Provider, boolean>): boolean {
+  return isConfigured[p] && (p === "google" ? s.googleEnabled : p === "microsoft" ? s.microsoftEnabled : s.githubEnabled);
+}
+
+export async function updateSettings(
+  db: Db,
+  config: AppConfig,
+  actorId: string,
+  patch: Record<string, unknown>,
+  now: number,
+  isConfigured: Record<Provider, boolean> = { google: true, microsoft: false, github: false },
+) {
   const keys = Object.keys(patch);
   if (!keys.length) throw badRequest("invalid_setting", "Nothing to update");
   const parsed: Partial<SystemSettings> = {};
@@ -92,8 +111,8 @@ export async function updateSettings(db: Db, config: AppConfig, actorId: string,
   }
   const current = await getSettings(db, config);
   const next = { ...current, ...parsed };
-  if (!(next.googleEnabled && googleConfigured) && !next.passwordEnabled) {
-    throw badRequest("invalid_setting", "At least one working sign-in method must stay enabled (Google needs its client ID and secret configured)");
+  if (!next.passwordEnabled && !PROVIDERS.some((p) => providerEnabled(next, p, isConfigured))) {
+    throw badRequest("invalid_setting", "At least one working sign-in method must stay enabled (a provider needs its client ID and secret configured)");
   }
   await db.batch([
     ...Object.entries(parsed).map(([key, value]) =>

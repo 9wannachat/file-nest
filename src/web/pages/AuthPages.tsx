@@ -1,7 +1,7 @@
 import { KeyRound, LogIn, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router";
-import type { AuthConfig } from "@shared/types";
+import { PROVIDER_LABELS, SIGN_IN_PROVIDERS, type AuthConfig, type SignInProvider } from "@shared/types";
 import { Alert, AlertDescription } from "@/components/Alert";
 import { OfflineBanner } from "@/components/AppShell";
 import { Wordmark } from "@/components/Logo";
@@ -17,9 +17,10 @@ import { api, ApiError, errorMessage } from "@/lib/api";
 const LOGIN_ERRORS: Record<string, string> = {
   cancelled: "Sign-in was cancelled.",
   invalid_state: "Your sign-in session expired. Please try again.",
-  signin_failed: "Google sign-in failed. Please try again.",
-  email_not_verified: "Your Google email address is not verified.",
-  not_configured: "Google sign-in is not configured on this server.",
+  signin_failed: "Sign-in failed. Please try again.",
+  email_not_verified: "Your email address with that provider is not verified.",
+  not_configured: "That sign-in method is not configured on this server.",
+  invite_needs_email: "Microsoft sign-up needs an invitation linked to your email address.",
   method_disabled: "That sign-in method is turned off.",
   invite_invalid: "This invitation is no longer valid.",
   invite_email_mismatch: "This invitation is for a different email address.",
@@ -29,7 +30,8 @@ const LOGIN_ERRORS: Record<string, string> = {
 const DENIED: Record<string, string> = {
   not_invited: "Your account is not on this FileNest’s member list. Ask an Admin for an invitation.",
   disabled: "Your access to this FileNest has been turned off by an Admin.",
-  account_mismatch: "This email is linked to a different Google account.",
+  account_mismatch: "This email is already linked to a different account with that provider.",
+  link_required: "You already have a FileNest account with this email. Sign in the usual way, then connect this provider in Settings.",
 };
 
 function Shell({ children }: { children: ReactNode }) {
@@ -56,10 +58,29 @@ function useAuthConfig() {
   useEffect(() => {
     api<AuthConfig>("/auth/config")
       .then(setCfg)
-      .catch(() => setCfg({ google: true, password: true, registration: "invite" }));
+      .catch(() => setCfg({ google: true, microsoft: false, github: false, password: true, registration: "invite" }));
   }, []);
   return cfg;
 }
+
+/** One "Continue with …" button per enabled provider. */
+function ProviderButtons({ enabled, query, primary }: { enabled: Partial<Record<SignInProvider, boolean>>; query: string; primary: boolean }) {
+  const list = SIGN_IN_PROVIDERS.filter((p) => enabled[p]);
+  if (!list.length) return null;
+  return (
+    <div className="grid gap-2">
+      {list.map((p) => (
+        <Button key={p} asChild size="lg" className="w-full" variant={primary && list.length === 1 ? "default" : "outline"}>
+          <a href={`${p === "google" ? "/auth/login" : `/auth/login/${p}`}?${query}`}>
+            <LogIn /> Continue with {PROVIDER_LABELS[p]}
+          </a>
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+const anyProvider = (m: Partial<Record<SignInProvider, boolean>>) => SIGN_IN_PROVIDERS.some((p) => m[p]);
 
 function Err({ children }: { children: ReactNode }) {
   return (
@@ -117,14 +138,8 @@ export function LoginPage() {
         <CardContent className="grid gap-4">
           {err ? <Err>{LOGIN_ERRORS[err] ?? "Sign-in failed."}</Err> : null}
           {!cfg ? <Spinner /> : null}
-          {cfg?.google ? (
-            <Button asChild size="lg" className="w-full" variant={cfg.password ? "outline" : "default"}>
-              <a href={`/auth/login?return_to=${encodeURIComponent(from)}`}>
-                <LogIn /> Continue with Google
-              </a>
-            </Button>
-          ) : null}
-          {cfg?.google && cfg.password ? (
+          {cfg ? <ProviderButtons enabled={cfg} query={`return_to=${encodeURIComponent(from)}`} primary={!cfg.password} /> : null}
+          {cfg && anyProvider(cfg) && cfg.password ? (
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
               <Separator className="flex-1" /> or <Separator className="flex-1" />
             </div>
@@ -213,7 +228,7 @@ export function MfaPage() {
 
 export function InvitePage() {
   const { token = "" } = useParams();
-  const [info, setInfo] = useState<{ valid: boolean; email: string | null; role: string; methods: { google: boolean; password: boolean } } | null>(null);
+  const [info, setInfo] = useState<{ valid: boolean; email: string | null; role: string; methods: Record<SignInProvider | "password", boolean> } | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
@@ -223,7 +238,7 @@ export function InvitePage() {
   useEffect(() => {
     api<typeof info>(`/auth/invite/${encodeURIComponent(token)}`)
       .then(setInfo)
-      .catch(() => setInfo({ valid: false, email: null, role: "member", methods: { google: false, password: false } }));
+      .catch(() => setInfo({ valid: false, email: null, role: "member", methods: { google: false, microsoft: false, github: false, password: false } }));
   }, [token]);
 
   const submit = async (e: FormEvent) => {
@@ -253,21 +268,15 @@ export function InvitePage() {
         </CardHeader>
         {info?.valid ? (
           <CardContent className="grid gap-4">
-            {info.methods.google ? (
-              <Button asChild size="lg" variant={info.methods.password ? "outline" : "default"} className="w-full">
-                <a href={`/auth/login?invite=${encodeURIComponent(token)}`}>
-                  <LogIn /> Continue with Google
-                </a>
-              </Button>
-            ) : null}
-            {info.methods.google && info.methods.password ? (
+            <ProviderButtons enabled={info.methods} query={`invite=${encodeURIComponent(token)}`} primary={!info.methods.password} />
+            {anyProvider(info.methods) && info.methods.password ? (
               <div className="flex items-center gap-3 text-xs text-muted-foreground">
                 <Separator className="flex-1" /> or <Separator className="flex-1" />
               </div>
             ) : null}
             {!info.methods.password && !info.email ? (
               <p className="text-sm text-muted-foreground">
-                {info.methods.google ? "This link accepts Google sign-in." : "Ask an Admin for an invitation linked to your email address."}
+                {anyProvider(info.methods) ? "Continue with one of the accounts above." : "Ask an Admin for an invitation linked to your email address."}
               </p>
             ) : null}
             {info.methods.password ? (

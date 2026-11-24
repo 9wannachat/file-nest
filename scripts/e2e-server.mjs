@@ -30,6 +30,8 @@ writeFileSync(
     "APP_ENCRYPTION_KEY=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
     "GOOGLE_CLIENT_ID=e2e",
     "GOOGLE_CLIENT_SECRET=e2e",
+    "GITHUB_CLIENT_ID=e2e",
+    "GITHUB_CLIENT_SECRET=e2e",
   ].join("\n"),
 );
 

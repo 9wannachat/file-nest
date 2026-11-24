@@ -1,7 +1,8 @@
-import { KeyRound, LogOut, Monitor, ShieldCheck, ShieldOff } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { KeyRound, Link2, LogOut, Monitor, ShieldCheck, ShieldOff, Unlink } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router";
 import { toast } from "sonner";
-import type { AccountInfo } from "@shared/types";
+import { PROVIDER_LABELS, SIGN_IN_PROVIDERS, type AccountInfo, type SignInProvider } from "@shared/types";
 import { MfaSetup, RecoveryCodes } from "@/components/MfaSetup";
 import { useReauth } from "@/components/reauth";
 import { ErrorState, Spinner } from "@/components/states";
@@ -69,6 +70,96 @@ function PasswordForm({ has, onDone }: { has: boolean; onDone: () => void }) {
   );
 }
 
+const LINK_ERRORS: Record<string, string> = {
+  identity_in_use: "That account is already connected to another FileNest member.",
+  already_linked: "That sign-in method is already connected.",
+  email_not_verified: "Your email address with that provider is not verified.",
+  method_disabled: "That sign-in method is turned off.",
+  invalid_state: "The connection expired. Please try again.",
+};
+
+/** Connect / disconnect external sign-in providers. */
+function ConnectedMethods({ data, onChange }: { data: AccountInfo; onChange: () => void }) {
+  const run = useReauth();
+  const [params, setParams] = useSearchParams();
+  const [busy, setBusy] = useState<SignInProvider | null>(null);
+  useEffect(() => {
+    const linked = params.get("linked") as SignInProvider | null;
+    const err = params.get("link_error");
+    if (!linked && !err) return;
+    if (linked && linked in PROVIDER_LABELS) toast.success(`${PROVIDER_LABELS[linked]} connected`);
+    if (err) toast.error(LINK_ERRORS[err] ?? "Could not connect that account.");
+    setParams({}, { replace: true });
+  }, [params, setParams]);
+
+  const shown = SIGN_IN_PROVIDERS.filter((p) => data.identities.includes(p) || data.availableProviders.includes(p));
+  if (!shown.length) return null;
+  const methods = data.identities.length + (data.hasPassword ? 1 : 0);
+
+  const connect = async (p: SignInProvider) => {
+    setBusy(p);
+    try {
+      const r = await run(() => api<{ url: string }>(`/api/account/identities/${p}`, { method: "POST" }));
+      if (r) return location.assign(r.url);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+    setBusy(null);
+  };
+  const disconnect = async (p: SignInProvider) => {
+    setBusy(p);
+    try {
+      const r = await run(() => api(`/api/account/identities/${p}`, { method: "DELETE" }));
+      if (r !== undefined) {
+        toast.success(`${PROVIDER_LABELS[p]} disconnected`);
+        onChange();
+      }
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <>
+      <section aria-labelledby="sec-ids" className="grid gap-3">
+        <h3 id="sec-ids" className="font-medium">
+          Connected sign-in methods
+        </h3>
+        <ul className="divide-y rounded-md border">
+          {shown.map((p) => {
+            const linked = data.identities.includes(p);
+            return (
+              <li key={p} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
+                <span className="flex-1 font-medium">{PROVIDER_LABELS[p]}</span>
+                <Badge variant={linked ? "secondary" : "outline"}>{linked ? "Connected" : "Not connected"}</Badge>
+                {linked ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy !== null || methods <= 1}
+                    title={methods <= 1 ? "Add a password or another method first" : undefined}
+                    onClick={() => void disconnect(p)}
+                  >
+                    <Unlink /> Disconnect
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void connect(p)}>
+                    <Link2 /> Connect
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+        {methods <= 1 ? <p className="text-xs text-muted-foreground">Your only sign-in method can’t be removed.</p> : null}
+      </section>
+      <Separator />
+    </>
+  );
+}
+
 export function SecurityCard() {
   const run = useReauth();
   const { data, error, loading, reload } = useApi<AccountInfo>("/api/account");
@@ -104,7 +195,6 @@ export function SecurityCard() {
                   Password
                 </h3>
                 <Badge variant={data.hasPassword ? "secondary" : "outline"}>{data.hasPassword ? "Set" : "Not set"}</Badge>
-                {data.googleLinked ? <Badge variant="outline">Google linked</Badge> : null}
               </div>
               <p className="text-sm text-muted-foreground">
                 {data.hasPassword
@@ -121,6 +211,8 @@ export function SecurityCard() {
             </section>
 
             <Separator />
+
+            <ConnectedMethods data={data} onChange={() => void reload()} />
 
             <section aria-labelledby="sec-mfa" className="grid gap-3">
               <div className="flex flex-wrap items-center gap-2">
