@@ -10,6 +10,10 @@ APP_ORIGIN=http://localhost:8788
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=replace-me
 
+# Optional: large-file uploads (multipart). Defaults: 64 MiB threshold, 16 MiB parts (min 5 MiB on R2).
+# MULTIPART_THRESHOLD_BYTES=67108864
+# MULTIPART_PART_BYTES=16777216
+
 # Optional: Microsoft (Entra ID) and GitHub sign-in. Leave unset to hide them.
 # Redirect URIs: http://localhost:8788/auth/callback/microsoft and /auth/callback/github
 # MICROSOFT_CLIENT_ID=

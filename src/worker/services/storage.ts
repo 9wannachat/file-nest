@@ -39,12 +39,24 @@ export interface TargetUsage {
   reservedBytes: number;
 }
 
+/** Lifetime of every presigned PUT (single or part). */
+export const URL_TTL_S = 15 * 60;
+/** A closed multipart session still reserves space until its part URLs are dead. */
+export const RESERVATION_GRACE_MS = URL_TTL_S * 1000 + 60_000;
+
+/**
+ * Upload sessions that reserve quota/capacity (unqualified columns, for use inside
+ * a one-table subquery on upload_sessions): open sessions, plus closed multipart
+ * sessions whose part URLs may still be used.
+ */
+export const liveReservation = (now: number) =>
+  sql`(state = 'finalizing' OR (state = 'pending' AND expires_at >= ${now}) OR (multipart_id IS NOT NULL AND closed_at > ${now - RESERVATION_GRACE_MS}))`;
+
 async function usageByTarget(db: Db, now: number): Promise<Map<string, TargetUsage>> {
   const rows = await db.all<TargetUsage>(sql`
     SELECT t.id AS id,
       (SELECT coalesce(sum(f.size), 0) FROM files f WHERE f.storage_id = t.id) AS usedBytes,
-      (SELECT coalesce(sum(s.declared_size), 0) FROM upload_sessions s WHERE s.storage_id = t.id
-        AND (s.state = 'finalizing' OR (s.state = 'pending' AND s.expires_at >= ${now}))) AS reservedBytes
+      (SELECT coalesce(sum(s.declared_size), 0) FROM upload_sessions s WHERE s.storage_id = t.id AND ${liveReservation(now)}) AS reservedBytes
     FROM storage_targets t`);
   return new Map(rows.map((r) => [r.id, { id: r.id, usedBytes: Number(r.usedBytes), reservedBytes: Number(r.reservedBytes) }]));
 }

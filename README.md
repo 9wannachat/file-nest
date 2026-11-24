@@ -10,6 +10,7 @@ Self-hosted file manager for you and your team, running entirely on **your own C
 - Sign in with Google (OpenID Connect + PKCE) or email and password, with optional or enforced two-factor authentication (authenticator app + recovery codes)
 - Invitation links, Admin and Member roles, and an Admin Console for members, bans, invitations, public links, settings, storage and audit
 - Drive: folders, breadcrumb, name search, drag-and-drop upload with per-file progress and retry, rename, move, trash, restore
+- **Large files**: files of 64 MiB or more upload in parts (4 at a time) straight to R2, can be paused and resumed, survive dropped connections, and continue after a reload or browser restart by choosing the same file again (up to ≈5 TB per file)
 - Preview images, video, audio, PDF and text **streamed through the Worker** (Range/seek supported). R2 is never exposed to browsers for reads.
 - Private by default. Share a file with specific members (view and download), or create a revocable public link (`/s/<token>`), optionally protected by a password.
 - **AI assistants via MCP**: a local MCP server lets Claude Code, Claude Desktop and other MCP clients download files into a working folder, process them with local tools (e.g. ffmpeg), and upload results back.
@@ -29,6 +30,8 @@ Browser ── presigned PUT (staging key only) ─► R2     shares, upload ses
 ```
 
 Upload flow: the Worker creates an upload session and pins its bucket and keys. The browser PUTs the file to a short-lived presigned URL for a random *staging* key. On finalize, the Worker checks the size, copies staging to a *final* key guarded by the source ETag (`x-amz-copy-source-if-match`), sniffs the content, and only then shows the file in the Drive. Finalize is idempotent and safe to retry.
+
+Large files (≥ `MULTIPART_THRESHOLD_BYTES`, default 64 MiB) use R2 multipart instead: the Worker starts a multipart upload at the final key and hands out per-part presigned PUTs (exact length signed, 15 min) in batches. To resume, the client must present the same file fingerprint (SHA-256 of the first and last MiB plus the size); nothing about the upload is stored in the browser. On finalize the Worker lists the parts from R2 itself, checks every part's size, and completes with exactly those ETags. Unfinished multipart sessions stay resumable for 24 h after the last activity (7 days at most) and are then aborted, freeing the stored parts. A cancelled or expired large upload keeps its space reserved until its part URLs have expired (≈16 min), so parts sent after a cancel can never exceed a quota or capacity. Recommended safety net: an R2 lifecycle rule on each bucket that aborts incomplete multipart uploads after 7 days (R2 → bucket → Settings → Object lifecycle rules).
 
 ## Requirements
 
@@ -69,7 +72,7 @@ Edit `wrangler.jsonc`:
 - `vars.APP_ORIGIN`: your public origin, e.g. `https://files.example.com` (no trailing slash)
 - `vars.GOOGLE_CLIENT_ID`: from step 3
 - `vars.BOOTSTRAP_ADMIN_EMAIL`: the Google email of the first Admin
-- Optional: `MAX_UPLOAD_BYTES` (default 512 MiB; max ≈ 5 GiB), `DEFAULT_QUOTA_BYTES` (10 GiB), `UPLOAD_RATE_PER_HOUR` (100), `TRASH_RETENTION_DAYS` (30)
+- Optional: `MAX_UPLOAD_BYTES` (default 512 MiB; max ≈ 5 TB; above 5 GiB only clients with multipart support — the web app and MCP server — can upload), `MULTIPART_THRESHOLD_BYTES` (64 MiB), `MULTIPART_PART_BYTES` (16 MiB, at least 5 MiB), `DEFAULT_QUOTA_BYTES` (10 GiB), `UPLOAD_RATE_PER_HOUR` (100), `TRASH_RETENTION_DAYS` (30)
 - Custom domain (recommended): add `"routes": [{ "pattern": "files.example.com", "custom_domain": true }]`
 
 ### 2. D1

@@ -1,7 +1,8 @@
 /**
  * Minimal in-process fake of the R2 S3 API, for tests and local development.
  * Supports: presigned PUT, PUT, HEAD, GET (+Range, If-Match), CopyObject with
- * x-amz-copy-source-if-match, DELETE, and CORS preflight.
+ * x-amz-copy-source-if-match, DELETE, CORS preflight, and multipart uploads
+ * (create, presigned UploadPart, ListParts, Complete with R2's equal-part rule, Abort).
  *
  * It does NOT verify SigV4 signatures (only presence + expiry). Never deploy it.
  * Written with erasable TypeScript only so Node can run it directly.
@@ -41,6 +42,14 @@ export interface FakeS3Options {
   now?: () => number;
   /** Simulate a provider that ignores x-amz-copy-source-if-match. */
   ignoreCopyIfMatch?: boolean;
+  /** Minimum size of every part except the last (R2: 5 MiB). */
+  minPartBytes?: number;
+}
+
+export interface FakeMultipart {
+  objKey: string;
+  contentType: string;
+  parts: Map<number, { body: Uint8Array; etag: string }>;
 }
 
 export interface LoggedRequest {
@@ -72,6 +81,9 @@ export function createFakeS3(opts: FakeS3Options = {}) {
   const allowed = opts.allowedOrigins ?? [];
   const now = opts.now ?? (() => Date.now());
   const requests: LoggedRequest[] = [];
+  const multipart = new Map<string, FakeMultipart>();
+  const minPart = opts.minPartBytes ?? 5 * 1024 * 1024;
+  const xml = (body: string, status = 200) => new Response(`<?xml version="1.0" encoding="UTF-8"?>${body}`, { status, headers: { "Content-Type": "application/xml" } });
 
   function corsHeaders(origin: string | null): Record<string, string> {
     if (!origin || !allowed.includes(origin)) return {};
@@ -121,6 +133,68 @@ export function createFakeS3(opts: FakeS3Options = {}) {
       if (req.method !== "PUT") return xmlError(403, "AccessDenied");
     } else if (!auth || !auth.startsWith("AWS4-HMAC-SHA256")) {
       return xmlError(403, "AccessDenied");
+    }
+
+    // ---- multipart ----
+    const mpId = url.searchParams.get("uploadId");
+    if (req.method === "POST" && url.searchParams.has("uploads")) {
+      const id = `mpu-${crypto.randomUUID()}`;
+      multipart.set(id, { objKey, contentType: req.headers.get("Content-Type") ?? "application/octet-stream", parts: new Map() });
+      return xml(`<InitiateMultipartUploadResult><Bucket>${bucket}</Bucket><Key>${key}</Key><UploadId>${id}</UploadId></InitiateMultipartUploadResult>`);
+    }
+    if (mpId !== null) {
+      const mp = multipart.get(mpId);
+      if (!mp || mp.objKey !== objKey) return xmlError(404, "NoSuchUpload");
+      if (req.method === "PUT") {
+        const n = Number(url.searchParams.get("partNumber"));
+        if (!Number.isInteger(n) || n < 1 || n > 10000) return xmlError(400, "InvalidArgument");
+        const body = new Uint8Array(await req.arrayBuffer());
+        const etag = await etagOf(body);
+        mp.parts.set(n, { body, etag });
+        return new Response(null, { status: 200, headers: { ETag: etag, ...cors } });
+      }
+      if (req.method === "GET") {
+        const max = Math.min(1000, Number(url.searchParams.get("max-parts") ?? "1000") || 1000);
+        const marker = Number(url.searchParams.get("part-number-marker") ?? "0") || 0;
+        const all = [...mp.parts.entries()].filter(([n]) => n > marker).sort((a, b) => a[0] - b[0]);
+        const page = all.slice(0, max);
+        const truncated = all.length > max;
+        const items = page.map(([n, p]) => `<Part><PartNumber>${n}</PartNumber><ETag>${p.etag.replace(/"/g, "&quot;")}</ETag><Size>${p.body.length}</Size></Part>`).join("");
+        return xml(`<ListPartsResult><UploadId>${mpId}</UploadId><IsTruncated>${truncated}</IsTruncated>${truncated ? `<NextPartNumberMarker>${page.at(-1)![0]}</NextPartNumberMarker>` : ""}${items}</ListPartsResult>`);
+      }
+      if (req.method === "DELETE") {
+        multipart.delete(mpId);
+        return new Response(null, { status: 204 });
+      }
+      if (req.method === "POST") {
+        const text = await req.text();
+        const wanted = [...text.matchAll(/<Part><PartNumber>(\d+)<\/PartNumber><ETag>([^<]*)<\/ETag><\/Part>/g)].map((m) => ({ n: Number(m[1]), etag: m[2]!.replace(/&quot;/g, '"') }));
+        if (!wanted.length) return xmlError(400, "MalformedXML");
+        const chunks: Uint8Array[] = [];
+        for (let i = 0; i < wanted.length; i++) {
+          const w = wanted[i]!;
+          if (i > 0 && w.n <= wanted[i - 1]!.n) return xml(`<Error><Code>InvalidPartOrder</Code></Error>`);
+          const p = mp.parts.get(w.n);
+          if (!p || unquote(p.etag) !== unquote(w.etag)) return xml(`<Error><Code>InvalidPart</Code></Error>`);
+          const last = i === wanted.length - 1;
+          if (!last && p.body.length < minPart) return xml(`<Error><Code>EntityTooSmall</Code></Error>`, 400);
+          // R2: every part except the last must have the same size.
+          if (!last && i > 0 && p.body.length !== chunks[0]!.length) return xml(`<Error><Code>InvalidPart</Code></Error>`, 400);
+          chunks.push(p.body);
+        }
+        const total = chunks.reduce((n, c) => n + c.length, 0);
+        const body = new Uint8Array(total);
+        let off = 0;
+        for (const c of chunks) {
+          body.set(c, off);
+          off += c.length;
+        }
+        const etag = `"${unquote(await etagOf(body)).slice(0, 32)}-${chunks.length}"`;
+        await store.put(objKey, { body, etag, contentType: mp.contentType });
+        multipart.delete(mpId);
+        return xml(`<CompleteMultipartUploadResult><Key>${key}</Key><ETag>${etag.replace(/"/g, "&quot;")}</ETag></CompleteMultipartUploadResult>`);
+      }
+      return xmlError(405, "MethodNotAllowed");
     }
 
     if (req.method === "PUT") {
@@ -186,6 +260,7 @@ export function createFakeS3(opts: FakeS3Options = {}) {
   return {
     store,
     requests,
+    multipart,
     fetch: ((input: RequestInfo | URL, init?: RequestInit) =>
       handle(input instanceof Request && !init ? input : new Request(input, init))) as typeof fetch,
     handle,

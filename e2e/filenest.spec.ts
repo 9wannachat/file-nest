@@ -232,6 +232,66 @@ test("language: Thai on the sign-in page and in the app, switch back without los
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
 });
 
+test("large files: multipart parts, pause/resume, and resume after a reload without re-sending parts", async ({ page }) => {
+  await devLogin(page);
+  const MiB = 1024 * 1024;
+  const bytes = (n: number, seed: number) => Buffer.from(Uint8Array.from({ length: n }, (_, i) => (i * 7 + seed) % 256));
+  const parts: string[] = [];
+  page.on("request", (r) => {
+    const u = new URL(r.url());
+    if (u.port === "9001" && r.method() === "PUT" && u.searchParams.get("partNumber")) parts.push(`${u.pathname.split("/").at(-1)}#${u.searchParams.get("partNumber")}`);
+  });
+  const sizeOf = async (name: string) =>
+    page.evaluate(async (n) => ((await (await fetch("/api/folders/root")).json()) as { files: { name: string; size: number }[] }).files.find((f) => f.name === n)?.size, name);
+
+  // 1. Pause while part 2 is held back, then resume.
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  await page.route("http://localhost:9001/**", async (route) => {
+    const u = new URL(route.request().url());
+    if (route.request().method() === "PUT" && u.searchParams.get("partNumber") === "2") await gate;
+    await route.continue().catch(() => {});
+  });
+  await page.locator('input[type="file"]').first().setInputFiles([{ name: "big-a.bin", mimeType: "application/octet-stream", buffer: bytes(12 * MiB, 1) }]);
+  const panel = page.getByRole("region", { name: "Uploads" });
+  await page.getByRole("button", { name: "Pause big-a.bin" }).click();
+  await expect(panel).toContainText("Paused");
+  release();
+  await page.unroute("http://localhost:9001/**");
+  await page.getByRole("button", { name: "Resume big-a.bin" }).click();
+  await expect(panel).toContainText("Uploads complete", { timeout: 30_000 });
+  expect(await sizeOf("big-a.bin")).toBe(12 * MiB);
+
+  // 2. Leave a large upload unfinished (part 3 keeps failing), reload, choose the same file.
+  const file = { name: "big-b.bin", mimeType: "application/octet-stream", buffer: bytes(13 * MiB, 2) };
+  let sawPart3!: () => void;
+  const part3 = new Promise<void>((r) => (sawPart3 = r));
+  await page.route("http://localhost:9001/**", async (route) => {
+    const u = new URL(route.request().url());
+    if (route.request().method() === "PUT" && u.searchParams.get("partNumber") === "3") {
+      sawPart3();
+      return route.abort("failed"); // the client keeps retrying this part
+    }
+    await route.continue().catch(() => {});
+  });
+  const stored = new Set<string>();
+  page.on("response", (r) => {
+    const u = new URL(r.url());
+    if (u.port === "9001" && r.request().method() === "PUT" && r.ok()) stored.add(u.searchParams.get("partNumber") ?? "");
+  });
+  await page.locator('input[type="file"]').first().setInputFiles([file]);
+  await part3;
+  await expect.poll(() => stored.has("1") && stored.has("2"), { timeout: 20_000 }).toBe(true); // both stored in R2
+  await page.reload();
+  await page.unroute("http://localhost:9001/**");
+  parts.length = 0;
+  await expect(panel).toContainText("big-b.bin");
+  await page.getByLabel("Choose big-b.bin to continue uploading").setInputFiles([file]);
+  await expect(panel).toContainText("Uploads complete", { timeout: 30_000 });
+  expect(await sizeOf("big-b.bin")).toBe(13 * MiB);
+  expect(parts.map((p) => p.split("#")[1])).toEqual(["3"]); // parts 1 and 2 were not sent again
+});
+
 function totp(secretB32: string, at = Date.now()): string {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
   let bits = 0;

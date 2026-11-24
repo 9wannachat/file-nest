@@ -104,12 +104,34 @@ export interface StorageCheck {
   message: string;
 }
 
-export interface UploadTicket {
-  uploadId: string;
-  putUrl: string;
-  putHeaders: Record<string, string>;
+export type UploadTicket =
+  | { uploadId: string; mode: "single"; putUrl: string; putHeaders: Record<string, string>; expiresAt: number; maxBytes: number }
+  | { uploadId: string; mode: "multipart"; partSize: number; partCount: number; expiresAt: number; maxBytes: number };
+
+export interface PartUrls {
+  urls: { part: number; size: number; url: string }[];
+  urlExpiresAt: number;
   expiresAt: number;
-  maxBytes: number;
+}
+
+export interface UploadedParts {
+  size: number;
+  partSize: number;
+  partCount: number;
+  expiresAt: number;
+  parts: { part: number; size: number }[];
+}
+
+export interface ResumableUpload {
+  uploadId: string;
+  name: string;
+  size: number;
+  mime: string | null;
+  folderId: string | null;
+  partSize: number;
+  partCount: number;
+  createdAt: number;
+  expiresAt: number;
 }
 
 export interface AuditEvent {

@@ -194,7 +194,26 @@ export const uploadSessions = sqliteTable("upload_sessions", {
   createdAt: integer("created_at").notNull(),
   expiresAt: integer("expires_at").notNull(),
   completedAt: integer("completed_at"),
+  multipartId: text("multipart_id"),
+  partSize: integer("part_size"),
+  partCount: integer("part_count"),
+  fingerprint: text("fingerprint"),
+  closedAt: integer("closed_at"),
 });
+
+export const multipartAborts = sqliteTable(
+  "multipart_aborts",
+  {
+    multipartId: text("multipart_id").notNull(),
+    storageId: text("storage_id").notNull(),
+    objectKey: text("object_key").notNull(),
+    notBefore: integer("not_before").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.storageId, t.multipartId] })],
+);
 
 export const objectDeletions = sqliteTable("object_deletions", {
   id: text("id").primaryKey(),

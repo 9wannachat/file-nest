@@ -28,7 +28,8 @@ const TOKEN_ROUTES: [method: "GET" | "POST", path: RegExp, scope: Scope][] = [
   ["GET", new RegExp(`^/api/files/${UUID}(/preview|/download)?$`), "files:read"],
   ["POST", /^\/api\/folders$/, "files:write"],
   ["POST", /^\/api\/uploads$/, "files:write"],
-  ["POST", new RegExp(`^/api/uploads/${UUID}/(finalize|abort)$`), "files:write"],
+  ["POST", new RegExp(`^/api/uploads/${UUID}/(finalize|abort|parts)$`), "files:write"],
+  ["GET", new RegExp(`^/api/uploads/${UUID}/parts$`), "files:write"],
 ];
 
 export function tokenRouteScope(method: string, path: string): Scope | null {

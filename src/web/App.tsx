@@ -60,7 +60,7 @@ function Protected() {
   const me = state.me;
   if (me.mfa?.setupRequired) return <MfaEnrollmentScreen />;
   return (
-    <UploadProvider maxBytes={me.limits.maxUploadBytes} remainingBytes={quotaState(me.user).remaining}>
+    <UploadProvider maxBytes={me.limits.maxUploadBytes} remainingBytes={quotaState(me.user).remaining} resumable>
       <AppShell>
         <Routes>
           <Route index element={<DrivePage />} />

@@ -42,6 +42,16 @@ const origins = (process.env.FAKE_S3_ORIGINS ?? "http://localhost:8788,http://12
 const s3 = createFakeS3({ store: disk, allowedOrigins: origins });
 
 createServer(async (req, res) => {
+  // A browser that reloads mid-upload aborts its request: never let that crash the server.
+  try {
+    await serve(req, res);
+  } catch {
+    if (!res.headersSent) res.writeHead(500);
+    res.end();
+  }
+}).listen(PORT, () => console.log(`[fake-s3] listening on http://localhost:${PORT} (CORS: ${origins.join(", ")})`));
+
+async function serve(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) {
   const chunks: Buffer[] = [];
   for await (const c of req) chunks.push(c as Buffer);
   const headers = new Headers();
@@ -55,4 +65,4 @@ createServer(async (req, res) => {
   const out = await s3.handle(request);
   res.writeHead(out.status, Object.fromEntries(out.headers));
   res.end(req.method === "HEAD" ? undefined : Buffer.from(await out.arrayBuffer()));
-}).listen(PORT, () => console.log(`[fake-s3] listening on http://localhost:${PORT} (CORS: ${origins.join(", ")})`));
+}

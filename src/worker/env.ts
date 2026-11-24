@@ -18,6 +18,10 @@ export interface Env {
   BOOTSTRAP_ADMIN_EMAIL?: string;
   APP_ENCRYPTION_KEY?: string;
   MAX_UPLOAD_BYTES?: string;
+  /** Files at least this big upload as R2 multipart (resumable). Default 64 MiB. */
+  MULTIPART_THRESHOLD_BYTES?: string;
+  /** Base part size; grows so a file never needs more than 10,000 parts. Default 16 MiB, min 5 MiB outside dev/test. */
+  MULTIPART_PART_BYTES?: string;
   DEFAULT_QUOTA_BYTES?: string;
   UPLOAD_RATE_PER_HOUR?: string;
   TRASH_RETENTION_DAYS?: string;
@@ -61,6 +65,8 @@ export interface AppConfig {
   appOrigin: string | null;
   secureCookies: boolean;
   maxUploadBytes: number;
+  multipartThresholdBytes: number;
+  multipartPartBytes: number;
   defaultQuotaBytes: number;
   uploadRatePerHour: number;
   trashRetentionDays: number;
@@ -73,8 +79,13 @@ function intVar(v: string | undefined, fallback: number, max = Number.MAX_SAFE_I
   return Math.min(n, max);
 }
 
-/** R2 single PUT limit is 5 GiB; keep a small margin. */
+/** R2 single PUT limit is 5 GiB; keep a small margin. Bigger files must use multipart. */
 export const SINGLE_PUT_LIMIT = 5 * 1024 ** 3 - 5 * 1024 ** 2;
+/** R2's largest object (multipart) is 4.995 TiB; stay just under it. */
+export const MAX_OBJECT_BYTES = 4_995 * 1024 ** 3;
+/** S3/R2 minimum size of every part except the last. */
+export const MIN_PART_BYTES = 5 * 1024 ** 2;
+export const MAX_PARTS = 10_000;
 
 export function loadConfig(env: Env): AppConfig {
   const environment = env.ENVIRONMENT ?? "production";
@@ -84,7 +95,13 @@ export function loadConfig(env: Env): AppConfig {
     isDev: environment === "development",
     appOrigin,
     secureCookies: appOrigin ? appOrigin.startsWith("https://") : environment !== "development",
-    maxUploadBytes: intVar(env.MAX_UPLOAD_BYTES, 512 * 1024 ** 2, SINGLE_PUT_LIMIT),
+    maxUploadBytes: intVar(env.MAX_UPLOAD_BYTES, 512 * 1024 ** 2, MAX_OBJECT_BYTES),
+    multipartThresholdBytes: Math.max(1, intVar(env.MULTIPART_THRESHOLD_BYTES, 64 * 1024 ** 2, SINGLE_PUT_LIMIT)),
+    // Smaller parts are only for local tests against the fake S3; R2 rejects them.
+    multipartPartBytes: Math.max(
+      environment === "development" || environment === "test" ? 1 : MIN_PART_BYTES,
+      intVar(env.MULTIPART_PART_BYTES, 16 * 1024 ** 2, 5 * 1024 ** 3),
+    ),
     defaultQuotaBytes: intVar(env.DEFAULT_QUOTA_BYTES, 10 * 1024 ** 3),
     uploadRatePerHour: intVar(env.UPLOAD_RATE_PER_HOUR, 100),
     trashRetentionDays: intVar(env.TRASH_RETENTION_DAYS, 30, 3650),

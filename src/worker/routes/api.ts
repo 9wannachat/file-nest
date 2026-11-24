@@ -11,7 +11,7 @@ import { serveFile } from "../services/content.ts";
 import * as drive from "../services/drive.ts";
 import * as members from "../services/members.ts";
 import * as shares from "../services/shares.ts";
-import { abortUpload, createUpload, finalizeUpload } from "../services/uploads.ts";
+import { abortUpload, createUpload, finalizeUpload, presignParts, resumableUploads, uploadedParts } from "../services/uploads.ts";
 import { files } from "../db/schema.ts";
 import { HttpError } from "../lib/errors.ts";
 import { eq, sql } from "drizzle-orm";
@@ -176,6 +176,10 @@ api.post("/uploads/:id/finalize", async (c) => {
   return c.json({ state: "completed", file: r.file });
 });
 api.post("/uploads/:id/abort", async (c) => c.json(await abortUpload(storageCtx(c), authOf(c).user, idParam(c))));
+// Multipart (large files): part URLs in batches, uploaded parts for resuming, and unfinished uploads.
+api.get("/uploads/resumable", async (c) => c.json(await resumableUploads(storageCtx(c), authOf(c).user)));
+api.post("/uploads/:id/parts", async (c) => c.json(await presignParts(storageCtx(c), authOf(c).user, idParam(c), await jsonBody(c))));
+api.get("/uploads/:id/parts", async (c) => c.json(await uploadedParts(storageCtx(c), authOf(c).user, idParam(c))));
 
 // ---- account security & admin console ----
 api.route("/account", account);

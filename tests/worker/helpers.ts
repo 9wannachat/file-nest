@@ -38,10 +38,10 @@ export async function googleKeys() {
 }
 
 export function setup(
-  opts: { oauthFetch?: typeof fetch; oauthJwks?: Partial<Record<"google" | "microsoft", import("jose").JWTVerifyGetKey>>; beforeS3?: (req: Request) => Promise<void> } = {},
+  opts: { minPartBytes?: number; oauthFetch?: typeof fetch; oauthJwks?: Partial<Record<"google" | "microsoft", import("jose").JWTVerifyGetKey>>; beforeS3?: (req: Request) => Promise<void> } = {},
 ) {
   const clock: Clock = { t: Date.now() };
-  const s3: FakeS3 = createFakeS3({ allowedOrigins: [ORIGIN], now: () => clock.t });
+  const s3: FakeS3 = createFakeS3({ allowedOrigins: [ORIGIN], now: () => clock.t, minPartBytes: opts.minPartBytes ?? 1 });
   const s3Fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const req = input instanceof Request && !init ? input : new Request(input, init);
     if (opts.beforeS3) await opts.beforeS3(req.clone());
@@ -172,6 +172,7 @@ export async function resetDb() {
   for (const t of [
     "audit_events",
     "object_deletions",
+    "multipart_aborts",
     "share_links",
     "file_shares",
     "upload_sessions",

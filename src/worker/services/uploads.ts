@@ -1,4 +1,15 @@
 /**
+ * Large files (>= multipartThresholdBytes, client opted in) use R2 multipart instead:
+ *
+ *  create   -> same placement/quota statement; R2 CreateMultipartUpload at FINAL_key.
+ *  parts    -> per-part presigned PUTs (exact length signed), requested in batches;
+ *              resumable after a reload: the client re-selects the file and must
+ *              present the same fingerprint (SHA-256 of first+last MiB).
+ *  finalize -> lease-claim -> ListParts from R2 (never the client's list): every part
+ *              1..partCount present with the planned sizes -> Complete with exactly
+ *              those ETags (a part re-uploaded meanwhile fails Complete) -> HEAD final
+ *              -> sniff -> insert row. Same idempotency/recovery as below.
+ *
  * Upload flow (single-part presigned PUT):
  *
  *  create   -> Worker checks auth, folder, size, quota, rate; pins storage_id,
@@ -12,22 +23,35 @@
  *              recovers when R2 succeeded but D1 failed (final already exists).
  */
 import { and, eq, inArray, lt, or, sql } from "drizzle-orm";
-import { files, objectDeletions, uploadSessions, type UploadSession, type User } from "../db/schema.ts";
-import type { Db } from "../env.ts";
+import { files, multipartAborts, objectDeletions, uploadSessions, type UploadSession, type User } from "../db/schema.ts";
+import { MAX_PARTS, SINGLE_PUT_LIMIT, type Db } from "../env.ts";
 import { atomicBatch } from "../db/client.ts";
 import { writableFolderId } from "../authz.ts";
 import { badRequest, HttpError, notFound } from "../lib/errors.ts";
 import { decideContentType, inlineCandidate, normalizeMime, SNIFF_BYTES } from "../lib/mime.ts";
 import { cleanName, withSuffix } from "../lib/names.ts";
 import { log } from "../lib/log.ts";
-import { StorageError } from "../storage/s3.ts";
+import { StorageError, type UploadedPart } from "../storage/s3.ts";
 import { fileDtoFor, isUniqueViolation } from "./drive.ts";
-import { bucketById, type StorageCtx } from "./storage.ts";
+import { bucketById, liveReservation, RESERVATION_GRACE_MS, URL_TTL_S, type StorageCtx } from "./storage.ts";
 import { getSettings } from "./settings.ts";
 import { reserveAttempt, tooMany } from "./authn.ts";
 
-export const PUT_URL_TTL_S = 15 * 60;
+export const PUT_URL_TTL_S = URL_TTL_S;
 export const SESSION_TTL_MS = 2 * 3600_000;
+/** Multipart sessions live 24 h, extended by each parts request, never past 7 days. */
+export const MULTIPART_TTL_MS = 24 * 3600_000;
+export const MULTIPART_MAX_AGE_MS = 7 * 24 * 3600_000;
+export const MAX_PARTS_PER_REQUEST = 100;
+const FINGERPRINT_RE = /^[0-9a-f]{64}$/;
+
+/** Plan parts so every part but the last has the same size (R2) and there are at most 10,000. */
+export function planParts(size: number, basePart: number) {
+  const partSize = Math.max(basePart, Math.ceil(size / MAX_PARTS));
+  return { partSize, partCount: Math.max(1, Math.ceil(size / partSize)) };
+}
+const partLength = (s: Pick<UploadSession, "declaredSize" | "partSize" | "partCount">, n: number) =>
+  n < s.partCount! ? s.partSize! : s.declaredSize - s.partSize! * (s.partCount! - 1);
 /** Must exceed the worst-case finalize time (server-side copy of up to ~5 GiB). */
 export const LEASE_MS = 5 * 60_000;
 /** Staging may only be deleted once its presigned URL can no longer be used. */
@@ -36,7 +60,7 @@ const stagingSafeAfter = (s: Pick<UploadSession, "createdAt">) => s.createdAt + 
 export async function createUpload(
   ctx: StorageCtx,
   user: User,
-  input: { name?: unknown; size?: unknown; mime?: unknown; folderId?: unknown },
+  input: { name?: unknown; size?: unknown; mime?: unknown; folderId?: unknown; multipart?: unknown; fingerprint?: unknown },
 ) {
   const { db, config, deps } = ctx;
   const now = deps.now();
@@ -48,6 +72,16 @@ export async function createUpload(
   if (size > maxUploadBytes) {
     throw new HttpError(413, "file_too_large", `File exceeds the ${maxUploadBytes} byte limit`, { maxBytes: maxUploadBytes });
   }
+  // Clients opt in to multipart (older clients only know the single PUT).
+  const multipart = input.multipart === true && size > 0 && size >= config.multipartThresholdBytes;
+  if (!multipart && size > SINGLE_PUT_LIMIT) {
+    throw new HttpError(413, "multipart_required", "Files over 5 GB need a client that supports multipart uploads");
+  }
+  const fingerprint = multipart ? input.fingerprint : null;
+  if (multipart && (typeof fingerprint !== "string" || !FINGERPRINT_RE.test(fingerprint))) {
+    throw badRequest("invalid_fingerprint", "A file fingerprint is required for large uploads");
+  }
+  const plan = multipart ? planParts(size, config.multipartPartBytes) : null;
   const declaredMime = normalizeMime(typeof input.mime === "string" ? input.mime : null);
   const folderId = await writableFolderId(db, user.id, input.folderId as string | null | undefined);
 
@@ -72,9 +106,9 @@ export async function createUpload(
     fileId,
     stagingKey: `staging/${crypto.randomUUID()}`,
     finalKey: `files/${fileId}/${crypto.randomUUID()}`,
-    expiresAt: now + SESSION_TTL_MS,
+    expiresAt: now + (multipart ? MULTIPART_TTL_MS : SESSION_TTL_MS),
   };
-  const live = sql`(state = 'finalizing' OR (state = 'pending' AND expires_at >= ${now}))`;
+  const live = liveReservation(now);
 
   // ONE statement picks the storage target and reserves the space:
   //  - target: first by priority that accepts uploads, has not failed its last health
@@ -93,9 +127,10 @@ export async function createUpload(
       LIMIT 1
     )
     INSERT INTO upload_sessions (id, owner_id, folder_id, file_id, name, declared_size, declared_mime, storage_id,
-                                 staging_key, final_key, state, created_at, expires_at)
+                                 staging_key, final_key, state, created_at, expires_at, part_size, part_count, fingerprint)
     SELECT ${s.id}, ${user.id}, ${folderId}, ${s.fileId}, ${name}, ${size}, ${declaredMime},
-           pick.id, ${s.stagingKey}, ${s.finalKey}, 'pending', ${now}, ${s.expiresAt}
+           pick.id, ${s.stagingKey}, ${s.finalKey}, 'pending', ${now}, ${s.expiresAt},
+           ${plan?.partSize ?? null}, ${plan?.partCount ?? null}, ${multipart ? (fingerprint as string) : null}
     FROM pick
     WHERE (SELECT quota_unlimited FROM users WHERE id = ${user.id}) = 1
        OR (SELECT coalesce(sum(size), 0) FROM files WHERE owner_id = ${user.id})
@@ -123,15 +158,153 @@ export async function createUpload(
 
   const contentType = declaredMime ?? "application/octet-stream";
   const bucket = await bucketById(ctx, storageId);
+  if (plan) {
+    let multipartId: string;
+    try {
+      // The object's R2 Content-Type is never trusted (content is served by the Worker).
+    multipartId = await bucket.createMultipart(s.finalKey, "application/octet-stream");
+    } catch (e) {
+      // Release the reservation; nothing was stored yet.
+      await db.update(uploadSessions).set({ state: "failed", errorCode: "storage_unavailable" }).where(eq(uploadSessions.id, s.id));
+      if (e instanceof StorageError) throw new HttpError(502, "storage_unavailable", "Storage is unavailable; retry");
+      throw e;
+    }
+    try {
+      await db.update(uploadSessions).set({ multipartId }).where(eq(uploadSessions.id, s.id));
+    } catch (e) {
+      // Never leave an R2 upload nobody knows about, nor a reservation without one.
+      await bucket.abortMultipart(s.finalKey, multipartId).catch(() => {});
+      await db.update(uploadSessions).set({ state: "failed", errorCode: "storage_unavailable" }).where(eq(uploadSessions.id, s.id)).catch(() => {});
+      throw e;
+    }
+    return { uploadId: s.id, mode: "multipart" as const, partSize: plan.partSize, partCount: plan.partCount, expiresAt: s.expiresAt, maxBytes: maxUploadBytes };
+  }
   // Content-Length is signed too, so the staging object cannot exceed the declared size.
   const putUrl = await bucket.presignPut(s.stagingKey, contentType, PUT_URL_TTL_S, size);
   return {
     uploadId: s.id,
+    mode: "single" as const,
     putUrl,
     putHeaders: { "Content-Type": contentType },
     expiresAt: now + PUT_URL_TTL_S * 1000,
     maxBytes: maxUploadBytes,
   };
+}
+
+async function ownSession(db: Db, user: User, uploadId: string) {
+  const s = await db
+    .select()
+    .from(uploadSessions)
+    .where(and(eq(uploadSessions.id, uploadId), eq(uploadSessions.ownerId, user.id)))
+    .get();
+  if (!s) throw notFound(); // also: not the owner
+  return s;
+}
+
+/** A multipart session that can still receive parts. */
+async function openMultipart(ctx: StorageCtx, user: User, uploadId: string) {
+  const now = ctx.deps.now();
+  const s = await ownSession(ctx.db, user, uploadId);
+  if (!s.multipartId || !s.partSize || !s.partCount) throw notFound();
+  if (s.state === "completed") throw new HttpError(409, "upload_completed", "This upload is already complete");
+  if (s.state !== "pending") throw new HttpError(410, `upload_${s.state === "finalizing" ? "finalizing" : "closed"}`, "Upload session is no longer accepting parts");
+  if (s.expiresAt < now) {
+    await expireSession(ctx.db, s, now);
+    throw new HttpError(410, "upload_expired", "Upload session expired");
+  }
+  return { s, now };
+}
+
+/** Presigned PUTs for some parts. The caller must present the file fingerprint given at create. */
+export async function presignParts(ctx: StorageCtx, user: User, uploadId: string, input: { parts?: unknown; fingerprint?: unknown }) {
+  const { s, now } = await openMultipart(ctx, user, uploadId);
+  if (typeof input.fingerprint !== "string" || input.fingerprint !== s.fingerprint) {
+    throw new HttpError(409, "file_mismatch", "This is not the same file that this upload started with");
+  }
+  const parts = input.parts;
+  if (
+    !Array.isArray(parts) ||
+    parts.length < 1 ||
+    parts.length > MAX_PARTS_PER_REQUEST ||
+    new Set(parts).size !== parts.length ||
+    !parts.every((n) => Number.isSafeInteger(n) && n >= 1 && n <= s.partCount!)
+  ) {
+    throw badRequest("invalid_parts", `Request 1–${MAX_PARTS_PER_REQUEST} distinct part numbers between 1 and ${s.partCount}`);
+  }
+  // Keep an active upload alive, but never past the maximum age.
+  const expiresAt = Math.min(s.createdAt + MULTIPART_MAX_AGE_MS, now + MULTIPART_TTL_MS);
+  if (expiresAt > s.expiresAt) {
+    await ctx.db
+      .update(uploadSessions)
+      .set({ expiresAt })
+      .where(and(eq(uploadSessions.id, s.id), eq(uploadSessions.state, "pending")));
+  }
+  const bucket = await bucketById(ctx, s.storageId);
+  const urls = await Promise.all(
+    (parts as number[]).map(async (n) => ({ part: n, size: partLength(s, n), url: await bucket.presignPart(s.finalKey, s.multipartId!, n, partLength(s, n), PUT_URL_TTL_S) })),
+  );
+  return { urls, urlExpiresAt: now + PUT_URL_TTL_S * 1000, expiresAt: Math.max(expiresAt, s.expiresAt) };
+}
+
+/** Parts R2 already holds (sizes only), so a client can resume. */
+/** Listing parts costs R2 requests: a generous per-member budget stops amplification. */
+async function listBudget(db: Db, user: User, now: number) {
+  const budget = await reserveAttempt(db, "upload-list", user.id, now, 2000);
+  if (!budget.ok) throw tooMany(budget);
+}
+
+export async function uploadedParts(ctx: StorageCtx, user: User, uploadId: string) {
+  const { s, now } = await openMultipart(ctx, user, uploadId);
+  await listBudget(ctx.db, user, now);
+  const bucket = await bucketById(ctx, s.storageId);
+  let parts: UploadedPart[] | null;
+  try {
+    parts = await bucket.listParts(s.finalKey, s.multipartId!);
+  } catch (e) {
+    if (e instanceof StorageError) throw new HttpError(502, "storage_unavailable", "Storage is unavailable; retry");
+    throw e;
+  }
+  if (!parts) throw new HttpError(410, "upload_closed", "Upload session is no longer accepting parts");
+  return {
+    size: s.declaredSize,
+    partSize: s.partSize!,
+    partCount: s.partCount!,
+    expiresAt: s.expiresAt,
+    // Only parts with the planned length count; anything else gets uploaded again.
+    parts: parts.filter((p) => p.part <= s.partCount! && p.size === partLength(s, p.part)).map((p) => ({ part: p.part, size: p.size })),
+  };
+}
+
+/** The member's unfinished large uploads (to resume after a reload). */
+export async function resumableUploads(ctx: StorageCtx, user: User) {
+  const now = ctx.deps.now();
+  const rows = await ctx.db
+    .select()
+    .from(uploadSessions)
+    .where(and(eq(uploadSessions.ownerId, user.id), eq(uploadSessions.state, "pending"), sql`${uploadSessions.multipartId} IS NOT NULL`, sql`${uploadSessions.expiresAt} >= ${now}`))
+    .orderBy(sql`${uploadSessions.createdAt} DESC`)
+    .limit(50);
+  return {
+    uploads: rows.map((s) => ({
+      uploadId: s.id,
+      name: s.name,
+      size: s.declaredSize,
+      mime: s.declaredMime,
+      folderId: s.folderId,
+      partSize: s.partSize!,
+      partCount: s.partCount!,
+      createdAt: s.createdAt,
+      expiresAt: s.expiresAt,
+    })),
+  };
+}
+
+/** Abort in R2 once no part URL can be used any more (a part in flight could otherwise land after an abort). */
+function enqueueAbort(db: Db, s: UploadSession, now: number) {
+  return db
+    .insert(multipartAborts)
+    .values({ multipartId: s.multipartId!, storageId: s.storageId, objectKey: s.finalKey, notBefore: now + RESERVATION_GRACE_MS, attempts: 0, createdAt: now })
+    .onConflictDoNothing();
 }
 
 function enqueueDelete(db: Db, storageId: string, key: string, reason: string, notBefore: number, now: number) {
@@ -152,10 +325,54 @@ async function releaseLease(db: Db, s: UploadSession) {
 
 async function failSession(db: Db, s: UploadSession, code: string, now: number) {
   await db.batch([
-    db.update(uploadSessions).set({ state: "failed", errorCode: code, leaseUntil: null }).where(holdsLease(s)),
+    db.update(uploadSessions).set({ state: "failed", errorCode: code, leaseUntil: null, closedAt: now }).where(holdsLease(s)),
     enqueueDelete(db, s.storageId, s.stagingKey, "failed_upload", Math.max(now, stagingSafeAfter(s)), now),
     enqueueDelete(db, s.storageId, s.finalKey, "failed_upload", now, now),
+    ...(s.multipartId ? [enqueueAbort(db, s, now)] : []),
   ]);
+}
+
+/**
+ * Multipart: verify the parts R2 holds against the plan, then complete with
+ * exactly those ETags. Returns false (lease released) when parts are missing.
+ */
+async function completeFromParts(bucket: Awaited<ReturnType<typeof bucketById>>, db: Db, s: UploadSession, now: number) {
+  const parts = await bucket.listParts(s.finalKey, s.multipartId!);
+  if (!parts) {
+    await failSession(db, s, "upload_missing", now);
+    throw new HttpError(410, "upload_missing", "The uploaded parts are no longer available; upload the file again");
+  }
+  const byNumber = new Map(parts.map((p) => [p.part, p]));
+  const plan: UploadedPart[] = [];
+  for (let n = 1; n <= s.partCount!; n++) {
+    const p = byNumber.get(n);
+    if (!p || p.size !== partLength(s, n)) {
+      // Missing, or a wrong length (lengths are signed, so this is an interrupted or
+      // tampered part): the client re-uploads that part and finalizes again.
+      await releaseLease(db, s);
+      throw new HttpError(409, "upload_incomplete", "The file has not finished uploading");
+    }
+    plan.push(p);
+  }
+  if (parts.length !== s.partCount) {
+    await failSession(db, s, "size_mismatch", now);
+    throw new HttpError(422, "size_mismatch", "Uploaded size does not match the declared size");
+  }
+  const r = await bucket.completeMultipart(s.finalKey, s.multipartId!, plan);
+  if (r === "too_small") {
+    // Configuration error (MULTIPART_PART_BYTES below R2's 5 MiB): retrying cannot help.
+    log.error("upload.part_too_small", { partSize: s.partSize });
+    await failSession(db, s, "part_too_small", now);
+    throw new HttpError(422, "part_too_small", "Storage rejected the part size; ask an Admin to check the upload settings");
+  }
+  if (r === "invalid_part") {
+    await releaseLease(db, s);
+    throw new HttpError(409, "staging_changed", "The upload changed during verification; retry");
+  }
+  if (r === "no_such_upload" && !(await bucket.head(s.finalKey))) {
+    await failSession(db, s, "upload_missing", now);
+    throw new HttpError(410, "upload_missing", "The uploaded parts are no longer available; upload the file again");
+  }
 }
 
 export type FinalizeResult =
@@ -238,7 +455,17 @@ async function runFinalize(ctx: StorageCtx, user: User, s: UploadSession, now: n
   const bucket = await bucketById(ctx, s.storageId); // pinned target, never the current default
 
   let finalHead = await bucket.head(s.finalKey);
-  if (!finalHead) {
+  if (!finalHead && s.multipartId) {
+    try {
+      await listBudget(db, user, now);
+    } catch (e) {
+      await releaseLease(db, s);
+      throw e;
+    }
+    await completeFromParts(bucket, db, s, now);
+    finalHead = await bucket.head(s.finalKey);
+    if (!finalHead) throw new StorageError("head_final", 404);
+  } else if (!finalHead) {
     const staging = await bucket.head(s.stagingKey);
     if (!staging) {
       await releaseLease(db, s);
@@ -286,7 +513,10 @@ async function runFinalize(ctx: StorageCtx, user: User, s: UploadSession, now: n
           .update(uploadSessions)
           .set({ state: "completed", completedAt: now, leaseUntil: null })
           .where(holdsLease(s)),
-        enqueueDelete(db, s.storageId, s.stagingKey, "staging_done", Math.max(now, stagingSafeAfter(s)), now),
+        // Multipart sessions never wrote their staging key.
+        s.multipartId
+          ? sql`SELECT 1`
+          : enqueueDelete(db, s.storageId, s.stagingKey, "staging_done", Math.max(now, stagingSafeAfter(s)), now),
       ]);
       completed = (results[1]?.meta.changes ?? 0) === 1;
     } catch (e) {
@@ -316,10 +546,15 @@ export async function abortUpload(ctx: StorageCtx, user: User, uploadId: string)
   await db.batch([
     db
       .update(uploadSessions)
-      .set({ state: "aborted" })
+      .set({ state: "aborted", closedAt: now })
       .where(and(eq(uploadSessions.id, s.id), eq(uploadSessions.state, "pending"))),
     enqueueDelete(db, s.storageId, s.stagingKey, "aborted", Math.max(now, stagingSafeAfter(s)), now),
+    ...(s.multipartId ? [enqueueAbort(db, s, now)] : []),
   ]);
+  if (s.multipartId) {
+    // Free the stored parts now (best effort); the queued abort runs again once all part URLs are dead.
+    await (await bucketById(ctx, s.storageId)).abortMultipart(s.finalKey, s.multipartId).catch(() => {});
+  }
   return { state: "aborted" };
 }
 
@@ -327,11 +562,12 @@ export async function expireSession(db: Db, s: UploadSession, now: number) {
   await db.batch([
     db
       .update(uploadSessions)
-      .set({ state: "expired", leaseUntil: null })
+      .set({ state: "expired", leaseUntil: null, closedAt: now })
       .where(and(eq(uploadSessions.id, s.id), inArray(uploadSessions.state, ["pending", "finalizing"]))),
     enqueueDelete(db, s.storageId, s.stagingKey, "expired", Math.max(now, stagingSafeAfter(s)), now),
     // The final key is only deleted if no file row references it (re-checked by the
     // job), and only after any finalizer's lease could have run out.
     enqueueDelete(db, s.storageId, s.finalKey, "expired", now + LEASE_MS + 60_000, now),
+    ...(s.multipartId ? [enqueueAbort(db, s, now)] : []),
   ]);
 }

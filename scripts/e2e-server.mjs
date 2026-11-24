@@ -32,6 +32,9 @@ writeFileSync(
     "GOOGLE_CLIENT_SECRET=e2e",
     "GITHUB_CLIENT_ID=e2e",
     "GITHUB_CLIENT_SECRET=e2e",
+    // Large-file path with real R2 part rules (5 MiB parts) on small test files.
+    "MULTIPART_THRESHOLD_BYTES=6291456",
+    "MULTIPART_PART_BYTES=5242880",
   ].join("\n"),
 );
 

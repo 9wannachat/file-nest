@@ -61,7 +61,7 @@ export function AdminSettingsPage() {
   const changed = (Object.keys(s) as (keyof SystemSettings)[]).filter((k) => s[k] !== data.settings[k]);
   const set = <K extends keyof SystemSettings>(k: K, v: SystemSettings[K]) => setS({ ...s, [k]: v });
   const cap = data.limits.maxUploadBytes;
-  const uploadOptions = [50 * MB, 100 * MB, 250 * MB, 512 * MB, GB, 2 * GB, 5 * GB].filter((v) => v <= cap);
+  const uploadOptions = [50 * MB, 100 * MB, 250 * MB, 512 * MB, GB, 2 * GB, 5 * GB, 10 * GB, 20 * GB, 50 * GB, 100 * GB].filter((v) => v <= cap);
   if (!uploadOptions.includes(cap)) uploadOptions.push(cap);
 
   const save = async () => {

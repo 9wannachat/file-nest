@@ -13,6 +13,17 @@ export interface ObjectHead {
   etag: string;
 }
 
+export interface UploadedPart {
+  part: number;
+  size: number;
+  etag: string;
+}
+
+const MULTIPART_ID_RE = /^[A-Za-z0-9._~+\/=-]{1,1024}$/;
+const xmlText = (xml: string, tag: string) => new RegExp(`<${tag}>([^<]*)</${tag}>`).exec(xml)?.[1] ?? null;
+const xmlEsc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const xmlUnesc = (s: string) => s.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+
 export class StorageError extends Error {
   constructor(
     readonly op: string,
@@ -78,6 +89,91 @@ export class R2Bucket {
       aws: { signQuery: true, allHeaders: true },
     });
     return signed.url;
+  }
+
+  // ---- multipart (large files) ----
+
+  private mpUrl(key: string, params: Record<string, string>): string {
+    const u = new URL(this.url(key));
+    for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+    return u.toString();
+  }
+
+  /** Start a multipart upload at `key`; returns R2's upload id. */
+  async createMultipart(key: string, contentType: string): Promise<string> {
+    const res = await this.send("mpu_create", this.mpUrl(key, { uploads: "" }), { method: "POST", headers: { "Content-Type": contentType } });
+    const body = res.ok ? await res.text() : "";
+    const id = xmlText(body, "UploadId");
+    if (!res.ok || !id || !MULTIPART_ID_RE.test(xmlUnesc(id))) throw new StorageError("mpu_create", res.ok ? 502 : res.status);
+    return xmlUnesc(id);
+  }
+
+  /** Presigned UploadPart with the exact part length signed in. */
+  async presignPart(key: string, multipartId: string, part: number, contentLength: number, expiresSeconds: number): Promise<string> {
+    const u = new URL(this.mpUrl(key, { partNumber: String(part), uploadId: multipartId }));
+    u.searchParams.set("X-Amz-Expires", String(expiresSeconds));
+    const signed = await this.aws.sign(u.toString(), {
+      method: "PUT",
+      headers: { "Content-Length": String(contentLength) },
+      aws: { signQuery: true, allHeaders: true },
+    });
+    return signed.url;
+  }
+
+  /** Parts R2 has stored for an upload (paginated), or null if the upload no longer exists. */
+  async listParts(key: string, multipartId: string): Promise<UploadedPart[] | null> {
+    const out: UploadedPart[] = [];
+    let marker = "0";
+    for (let page = 0; page < 20; page++) {
+      const res = await this.send("mpu_list", this.mpUrl(key, { uploadId: multipartId, "max-parts": "1000", "part-number-marker": marker }), { method: "GET" });
+      if (res.status === 404) return null;
+      const body = res.ok ? await res.text() : "";
+      if (!res.ok || body.includes("<Error>")) {
+        if (body.includes("NoSuchUpload")) return null;
+        throw new StorageError("mpu_list", res.ok ? 502 : res.status);
+      }
+      for (const m of body.matchAll(/<Part>([\s\S]*?)<\/Part>/g)) {
+        const rawPart = xmlText(m[1]!, "PartNumber") ?? "";
+        const rawSize = xmlText(m[1]!, "Size") ?? "";
+        const etag = xmlText(m[1]!, "ETag");
+        // Strict: a malformed listing is a storage fault (retryable), never "part 0" or "size 0".
+        if (!/^\d{1,5}$/.test(rawPart) || !/^\d{1,16}$/.test(rawSize) || !etag) throw new StorageError("mpu_list", 502);
+        const part = Number(rawPart);
+        const size = Number(rawSize);
+        if (part < 1 || part > 10_000 || !Number.isSafeInteger(size)) throw new StorageError("mpu_list", 502);
+        out.push({ part, size, etag: xmlUnesc(etag) });
+      }
+      if (xmlText(body, "IsTruncated") !== "true") return out;
+      const next = xmlText(body, "NextPartNumberMarker");
+      if (!next || next === marker) throw new StorageError("mpu_list", 502);
+      marker = next;
+    }
+    throw new StorageError("mpu_list", 502);
+  }
+
+  /**
+   * Complete with the exact parts (and ETags) we verified. If any part was
+   * re-uploaded since, R2 answers InvalidPart and nothing is published.
+   */
+  async completeMultipart(key: string, multipartId: string, parts: UploadedPart[]): Promise<"ok" | "invalid_part" | "too_small" | "no_such_upload"> {
+    const xml = `<CompleteMultipartUpload>${parts.map((p) => `<Part><PartNumber>${p.part}</PartNumber><ETag>${xmlEsc(p.etag)}</ETag></Part>`).join("")}</CompleteMultipartUpload>`;
+    const res = await this.send("mpu_complete", this.mpUrl(key, { uploadId: multipartId }), {
+      method: "POST",
+      headers: { "Content-Type": "application/xml" },
+      body: xml,
+    });
+    // Like CopyObject, Complete can answer 200 with an <Error> body.
+    const body = await res.text();
+    if (res.ok && !body.includes("<Error>")) return "ok";
+    if (body.includes("EntityTooSmall")) return "too_small";
+    if (/InvalidPart|InvalidPartOrder/.test(body)) return "invalid_part";
+    if (body.includes("NoSuchUpload") || res.status === 404) return "no_such_upload";
+    throw new StorageError("mpu_complete", res.ok ? 502 : res.status);
+  }
+
+  async abortMultipart(key: string, multipartId: string): Promise<void> {
+    const res = await this.send("mpu_abort", this.mpUrl(key, { uploadId: multipartId }), { method: "DELETE" });
+    if (!(res.ok || res.status === 404)) throw new StorageError("mpu_abort", res.status);
   }
 
   async head(key: string): Promise<ObjectHead | null> {

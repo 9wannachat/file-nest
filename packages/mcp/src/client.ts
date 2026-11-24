@@ -1,4 +1,5 @@
 /** Minimal FileNest API client using a personal access token. */
+import { createHash } from "node:crypto";
 import { constants, openAsBlob } from "node:fs";
 import { open, rename } from "node:fs/promises";
 import { Readable } from "node:stream";
@@ -39,6 +40,22 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export function assertId(id: string, what = "id") {
   if (!UUID.test(id)) throw new ApiError(400, "invalid_id", `Invalid ${what}: expected a FileNest UUID`);
 }
+
+const MiB = 1024 * 1024;
+
+/** SHA-256 of (first MiB ‖ last MiB ‖ size): same as the web app, identifies the file when resuming. */
+export async function fileFingerprint(blob: Blob): Promise<string> {
+  const size = blob.size;
+  const h = createHash("sha256");
+  h.update(new Uint8Array(await blob.slice(0, Math.min(MiB, size)).arrayBuffer()));
+  if (size > MiB) h.update(new Uint8Array(await blob.slice(Math.max(MiB, size - MiB), size).arrayBuffer()));
+  h.update(String(size));
+  return h.digest("hex");
+}
+
+type Ticket =
+  | { uploadId: string; mode?: "single"; putUrl: string; putHeaders: Record<string, string> }
+  | { uploadId: string; mode: "multipart"; partSize: number; partCount: number };
 
 export class FileNestClient {
   constructor(
@@ -163,34 +180,84 @@ export class FileNestClient {
     }
   }
 
-  /** create session → PUT to presigned URL (exact length) → finalize (retrying while in progress). */
+  /**
+   * create session → PUT to presigned URL (exact length), or for large files the
+   * missing multipart parts → finalize (retrying while in progress).
+   */
   async upload(localPath: string, name: string, size: number, mime: string, folderId: string | null): Promise<FileItem> {
     if (folderId) assertId(folderId, "folderId");
-    const ticket = await this.post<{ uploadId: string; putUrl: string; putHeaders: Record<string, string> }>("/api/uploads", {
-      name,
-      size,
-      mime,
-      folderId,
-    });
-    // A Blob body has a known length, so fetch sends the exact signed Content-Length.
-    const blob = await openAsBlob(localPath, { type: ticket.putHeaders["Content-Type"] ?? mime });
-    if (blob.size !== size) throw new ApiError(409, "file_changed", "The local file changed while uploading");
-    let put: Response;
-    try {
-      put = await this.fetchImpl(ticket.putUrl, { method: "PUT", headers: ticket.putHeaders, body: blob });
-    } catch (e) {
-      throw new ApiError(0, "network", `Upload to storage failed: ${(e as Error).message}`);
+    const file = await openAsBlob(localPath, { type: mime });
+    if (file.size !== size) throw new ApiError(409, "file_changed", "The local file changed while uploading");
+    const fingerprint = await fileFingerprint(file);
+    const ticket = await this.post<Ticket>("/api/uploads", { name, size, mime, folderId, multipart: true, fingerprint });
+    if (ticket.mode === "multipart") {
+      await this.uploadParts(ticket.uploadId, file, ticket, fingerprint, new Set());
+    } else {
+      // A Blob body has a known length, so fetch sends the exact signed Content-Length.
+      const blob = await openAsBlob(localPath, { type: ticket.putHeaders["Content-Type"] ?? mime });
+      if (blob.size !== size) throw new ApiError(409, "file_changed", "The local file changed while uploading");
+      let put: Response;
+      try {
+        put = await this.fetchImpl(ticket.putUrl, { method: "PUT", headers: ticket.putHeaders, body: blob });
+      } catch (e) {
+        throw new ApiError(0, "network", `Upload to storage failed: ${(e as Error).message}`);
+      }
+      if (!put.ok) throw new ApiError(put.status, "storage_put_failed", `Storage rejected the upload (HTTP ${put.status})`);
     }
-    if (!put.ok) throw new ApiError(put.status, "storage_put_failed", `Storage rejected the upload (HTTP ${put.status})`);
+    let refilled = false;
     for (let attempt = 0; attempt < 30; attempt++) {
       try {
         const r = await this.post<{ state: string; file?: FileItem }>(`/api/uploads/${ticket.uploadId}/finalize`);
         if (r.state === "completed" && r.file) return r.file;
       } catch (e) {
+        if (e instanceof ApiError && e.code === "upload_incomplete" && ticket.mode === "multipart" && !refilled) {
+          refilled = true;
+          const have = await this.json<{ parts: { part: number }[] }>(`/api/uploads/${ticket.uploadId}/parts`);
+          await this.uploadParts(ticket.uploadId, file, ticket, fingerprint, new Set(have.parts.map((p) => p.part)));
+          continue;
+        }
         if (!(e instanceof ApiError) || !["upload_incomplete", "staging_changed", "storage_unavailable"].includes(e.code) || attempt >= 5) throw e;
       }
       await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
     }
     throw new ApiError(504, "finalize_timeout", "Finalizing took too long");
+  }
+
+  /** Upload the parts not in `have`, 4 at a time, each retried on its own. */
+  private async uploadParts(uploadId: string, file: Blob, plan: { partSize: number; partCount: number }, fingerprint: string, have: Set<number>) {
+    const todo: number[] = [];
+    for (let n = 1; n <= plan.partCount; n++) if (!have.has(n)) todo.push(n);
+    const urls = new Map<number, { url: string; until: number }>();
+    const urlFor = async (n: number) => {
+      const c = urls.get(n);
+      if (c && c.until - Date.now() > 60_000) return c.url;
+      const want = [n, ...todo.filter((m) => m !== n && !urls.has(m))].slice(0, 20);
+      const r = await this.post<{ urls: { part: number; url: string }[]; urlExpiresAt: number }>(`/api/uploads/${uploadId}/parts`, { parts: want, fingerprint });
+      for (const u of r.urls) urls.set(u.part, { url: u.url, until: r.urlExpiresAt });
+      return urls.get(n)!.url;
+    };
+    const one = async (n: number) => {
+      const start = (n - 1) * plan.partSize;
+      const body = file.slice(start, Math.min(file.size, start + plan.partSize));
+      for (let attempt = 1; ; attempt++) {
+        let status = 0;
+        try {
+          const res = await this.fetchImpl(await urlFor(n), { method: "PUT", body });
+          if (res.ok) return;
+          status = res.status;
+          if (status === 403) urls.delete(n); // expired URL: sign again
+        } catch (e) {
+          if (e instanceof ApiError && e.status !== 0 && e.status < 500) throw e;
+        }
+        if (attempt >= 6) throw new ApiError(status || 0, "storage_put_failed", `Storage rejected part ${n} (HTTP ${status || "network"})`);
+        await new Promise((r) => setTimeout(r, Math.min(15_000, 500 * 2 ** attempt)));
+      }
+    };
+    let next = 0;
+    await Promise.all(
+      Array.from({ length: Math.min(4, todo.length) }, async () => {
+        while (next < todo.length) await one(todo[next++]!);
+      }),
+    );
   }
 }

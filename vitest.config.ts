@@ -31,6 +31,9 @@ export default defineConfig({
                 BOOTSTRAP_ADMIN_EMAIL: "admin@example.test",
                 APP_ENCRYPTION_KEY: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
                 MAX_UPLOAD_BYTES: "10485760",
+                // Tiny multipart plan for tests (fake S3 accepts small parts).
+                MULTIPART_THRESHOLD_BYTES: "10",
+                MULTIPART_PART_BYTES: "4",
                 DEFAULT_QUOTA_BYTES: "52428800",
                 UPLOAD_RATE_PER_HOUR: "50",
                 TRASH_RETENTION_DAYS: "30",
