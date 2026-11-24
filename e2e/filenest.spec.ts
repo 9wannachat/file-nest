@@ -176,9 +176,17 @@ test("theme: System follows the OS, explicit choice persists, share page matches
   await expect(page.locator("html")).not.toHaveClass(/dark/);
 
   await page.getByRole("button", { name: /^Account:/ }).click();
-  await page.getByRole("menuitem", { name: "Theme" }).click();
-  await page.getByRole("menuitemradio", { name: "Dark" }).click();
+  // Inline segmented control in the account menu: one click, menu stays open, arrows move the choice.
+  const themes = page.getByRole("radiogroup", { name: "Theme" });
+  await themes.getByRole("radio", { name: "Dark" }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect(themes.getByRole("radio", { name: "Dark" })).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("ArrowLeft");
+  await expect(themes.getByRole("radio", { name: "Light" })).toBeFocused();
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await page.keyboard.press("Escape");
   await page.reload();
   await expect(page.locator("html")).toHaveClass(/dark/); // no flash back to light: set before React mounts
   expect(await page.evaluate(() => document.documentElement.style.colorScheme)).toBe("dark");

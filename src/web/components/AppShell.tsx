@@ -1,4 +1,4 @@
-import { ChevronsUpDown, Download, FolderOpen, HardDrive, KeyRound, Languages, LogOut, Palette, RefreshCw, Search, Share2, Shield, Trash2, WifiOff } from "lucide-react";
+import { ChevronsUpDown, Download, FolderOpen, HardDrive, KeyRound, Languages, LogOut, RefreshCw, Search, Share2, Shield, Trash2, WifiOff } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { USAGE_CHANGED_EVENT, useAuth, useMe } from "@/auth";
@@ -43,7 +43,7 @@ import { UploadPanel } from "@/upload/UploadPanel";
 import { UPLOADED_EVENT, useUploads } from "@/upload/UploadProvider";
 import { CommandPalette, OPEN_PALETTE_EVENT } from "./CommandPalette";
 import { Logo } from "./Logo";
-import { ThemeRadioItems } from "./ThemeToggle";
+import { ThemeSegmented } from "./ThemeToggle";
 import { LanguageRadioItems } from "./LanguageSwitcher";
 import { QuotaBanner, QuotaBar } from "./quota";
 import { t } from "@/i18n";
@@ -167,14 +167,7 @@ function UserMenu({ compact }: { compact?: boolean }) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <Palette />{" "}{t("Theme")}
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              <ThemeRadioItems />
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
+          <ThemeSegmented inMenu />
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
               <Languages /> {t("Language")}

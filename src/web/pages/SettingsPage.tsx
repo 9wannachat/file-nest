@@ -3,7 +3,7 @@ import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import type { ApiTokenInfo } from "@shared/types";
 import { EmptyState, ErrorState, PageHeader, Spinner } from "@/components/states";
-import { THEME_OPTIONS } from "@/components/ThemeToggle";
+import { ThemeSegmented } from "@/components/ThemeToggle";
 import { LanguagePicker } from "@/components/LanguageSwitcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,8 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, errorMessage } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
-import { cn, formatDate } from "@/lib/utils";
-import { useTheme } from "@/theme";
+import { formatDate } from "@/lib/utils";
 import { SecurityCard } from "./SecurityCard";
 import { t } from "@/i18n";
 
@@ -28,7 +27,6 @@ function statusOf(tg: ApiTokenInfo): { label: string; variant: "secondary" | "ou
 }
 
 function AppearanceCard() {
-  const { theme, setTheme } = useTheme();
   return (
     <Card>
       <CardHeader>
@@ -36,23 +34,7 @@ function AppearanceCard() {
         <CardDescription>{t("System follows your device setting.")}</CardDescription>
       </CardHeader>
       <CardContent>
-        <div role="radiogroup" aria-label={t("Theme")} className="grid grid-cols-3 gap-2 sm:max-w-md">
-          {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
-            <button
-              key={value}
-              role="radio"
-              aria-checked={theme === value}
-              onClick={() => setTheme(value)}
-              className={cn(
-                "flex flex-col items-center gap-2 rounded-lg border p-3 text-sm outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                theme === value && "border-primary bg-accent text-accent-foreground",
-              )}
-            >
-              <Icon className="size-5" aria-hidden />
-              {t(label)}
-            </button>
-          ))}
-        </div>
+        <ThemeSegmented className="sm:max-w-xs" />
         <div className="mt-4 grid gap-2">
           <span className="text-sm font-medium">{t("Language")}</span>
           <LanguagePicker />
