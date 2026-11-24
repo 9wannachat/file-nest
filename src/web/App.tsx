@@ -25,15 +25,17 @@ import { SearchPage, SharedPage, TrashPage } from "@/pages/ListPages";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { UploadProvider } from "@/upload/UploadProvider";
 import { quotaState } from "@/components/quota";
+import { t, useLocale } from "@/i18n";
 
 function Protected() {
+  useLocale();
   const { state, refresh } = useAuth();
   const online = useOnline();
   const loc = useLocation();
   if (state.status === "loading") {
     return (
       <div className="flex h-full items-center justify-center">
-        <Spinner label="Loading FileNest" />
+        <Spinner label={t("Loading FileNest")} />
       </div>
     );
   }
@@ -44,10 +46,10 @@ function Protected() {
         {online ? (
           <ErrorState message={state.message} onRetry={refresh} />
         ) : (
-          <EmptyState icon={<WifiOff />} title="You’re offline">
-            FileNest needs an internet connection to show your files.
+          <EmptyState icon={<WifiOff />} title={t("You’re offline")}>
+            {t("FileNest needs an internet connection to show your files.")}
             <div className="mt-4">
-              <Button onClick={refresh}>Try again</Button>
+              <Button onClick={refresh}>{t("Try again")}</Button>
             </div>
           </EmptyState>
         )}
@@ -82,7 +84,7 @@ function Protected() {
           ) : (
             <Route path="admin/*" element={<Navigate to="/" replace />} />
           )}
-          <Route path="*" element={<EmptyState icon={<WifiOff />} title="Page not found" />} />
+          <Route path="*" element={<EmptyState icon={<WifiOff />} title={t("Page not found")} />} />
         </Routes>
       </AppShell>
     </UploadProvider>
@@ -96,6 +98,8 @@ function LoginRoute() {
 }
 
 export function App() {
+  // Subscribing here re-renders the whole tree when the language changes, without remounting (uploads and dialogs keep their state).
+  useLocale();
   return (
     <BrowserRouter>
       <AuthProvider>

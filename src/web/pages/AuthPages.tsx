@@ -7,14 +7,16 @@ import { OfflineBanner } from "@/components/AppShell";
 import { Wordmark } from "@/components/Logo";
 import { Spinner } from "@/components/states";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { LanguageToggle } from "@/components/LanguageSwitcher";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { api, ApiError, errorMessage } from "@/lib/api";
+import { t, type MessageKey } from "@/i18n";
 
-const LOGIN_ERRORS: Record<string, string> = {
+const LOGIN_ERRORS: Record<string, MessageKey> = {
   cancelled: "Sign-in was cancelled.",
   invalid_state: "Your sign-in session expired. Please try again.",
   signin_failed: "Sign-in failed. Please try again.",
@@ -27,7 +29,7 @@ const LOGIN_ERRORS: Record<string, string> = {
   member_exists: "An account with this email already exists. Sign in instead.",
 };
 
-const DENIED: Record<string, string> = {
+const DENIED: Record<string, MessageKey> = {
   not_invited: "Your account is not on this FileNest’s member list. Ask an Admin for an invitation.",
   disabled: "Your access to this FileNest has been turned off by an Admin.",
   account_mismatch: "This email is already linked to a different account with that provider.",
@@ -38,7 +40,8 @@ function Shell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-full flex-col bg-muted/40">
       <OfflineBanner />
-      <div className="flex justify-end p-3">
+      <div className="flex justify-end gap-1 p-3">
+        <LanguageToggle />
         <ThemeToggle />
       </div>
       <div className="flex flex-1 items-center justify-center p-4 pb-16">
@@ -72,7 +75,7 @@ function ProviderButtons({ enabled, query, primary }: { enabled: Partial<Record<
       {list.map((p) => (
         <Button key={p} asChild size="lg" className="w-full" variant={primary && list.length === 1 ? "default" : "outline"}>
           <a href={`${p === "google" ? "/auth/login" : `/auth/login/${p}`}?${query}`}>
-            <LogIn /> Continue with {PROVIDER_LABELS[p]}
+            <LogIn />{" "}{t("Continue with {provider}", { provider: PROVIDER_LABELS[p] })}
           </a>
         </Button>
       ))}
@@ -131,31 +134,31 @@ export function LoginPage() {
       <Card>
         <CardHeader>
           <CardTitle>
-            <h1 className="text-xl">Sign in</h1>
+            <h1 className="text-xl">{t("Sign in")}</h1>
           </CardTitle>
-          <CardDescription>Sign in with the account your Admin invited.</CardDescription>
+          <CardDescription>{t("Sign in with the account your Admin invited.")}</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
-          {err ? <Err>{LOGIN_ERRORS[err] ?? "Sign-in failed."}</Err> : null}
+          {err ? <Err>{t(LOGIN_ERRORS[err] ?? "Sign-in failed.")}</Err> : null}
           {!cfg ? <Spinner /> : null}
           {cfg ? <ProviderButtons enabled={cfg} query={`return_to=${encodeURIComponent(from)}`} primary={!cfg.password} /> : null}
           {cfg && anyProvider(cfg) && cfg.password ? (
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <Separator className="flex-1" /> or <Separator className="flex-1" />
+              <Separator className="flex-1" />{" "}{t("or")}{" "}<Separator className="flex-1" />
             </div>
           ) : null}
           {cfg?.password ? (
-            <form onSubmit={submit} className="grid gap-3" aria-label="Sign in with email">
+            <form onSubmit={submit} className="grid gap-3" aria-label={t("Sign in with email")}>
               <div className="grid gap-2">
-                <Label htmlFor="login-email">Email</Label>
+                <Label htmlFor="login-email">{t("Email")}</Label>
                 <Input id="login-email" type="email" required autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />
               </div>
-              <PasswordField id="login-password" label="Password" value={password} onChange={setPassword} autoComplete="current-password" />
+              <PasswordField id="login-password" label={t("Password")} value={password} onChange={setPassword} autoComplete="current-password" />
               {formError ? <Err>{formError}</Err> : null}
               <Button type="submit" size="lg" disabled={busy}>
-                <KeyRound /> Sign in
+                <KeyRound />{" "}{t("Sign in")}
               </Button>
-              <p className="text-xs text-muted-foreground">Forgot your password? Ask an Admin for a reset link.</p>
+              <p className="text-xs text-muted-foreground">{t("Forgot your password? Ask an Admin for a reset link.")}</p>
             </form>
           ) : null}
         </CardContent>
@@ -189,14 +192,14 @@ export function MfaPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ShieldCheck className="size-5 text-primary" aria-hidden />
-            <h1 className="text-xl">Two-factor authentication</h1>
+            <h1 className="text-xl">{t("Two-factor authentication")}</h1>
           </CardTitle>
-          <CardDescription>{useRecovery ? "Enter one of your recovery codes." : "Enter the 6-digit code from your authenticator app."}</CardDescription>
+          <CardDescription>{useRecovery ? t("Enter one of your recovery codes.") : t("Enter the 6-digit code from your authenticator app.")}</CardDescription>
         </CardHeader>
         <form onSubmit={submit}>
           <CardContent className="grid gap-3">
             <Label htmlFor="mfa-input" className="sr-only">
-              {useRecovery ? "Recovery code" : "Authentication code"}
+              {useRecovery ? t("Recovery code") : t("Authentication code")}
             </Label>
             <Input
               id="mfa-input"
@@ -214,10 +217,10 @@ export function MfaPage() {
           </CardContent>
           <CardFooter className="mt-4 flex-col gap-2">
             <Button type="submit" className="w-full" disabled={busy || (!useRecovery && value.length !== 6)}>
-              Verify
+              {t("Verify")}
             </Button>
             <Button type="button" variant="link" size="sm" onClick={() => (setUseRecovery(!useRecovery), setValue(""), setError(null))}>
-              {useRecovery ? "Use authenticator code" : "Use a recovery code"}
+              {useRecovery ? t("Use authenticator code") : t("Use a recovery code")}
             </Button>
           </CardFooter>
         </form>
@@ -243,7 +246,7 @@ export function InvitePage() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (pw !== pw2) return setError("Passwords don’t match");
+    if (pw !== pw2) return setError(t("Passwords don’t match"));
     setBusy(true);
     setError(null);
     try {
@@ -260,10 +263,10 @@ export function InvitePage() {
       <Card>
         <CardHeader>
           <CardTitle>
-            <h1 className="text-xl">Join FileNest</h1>
+            <h1 className="text-xl">{t("Join FileNest")}</h1>
           </CardTitle>
           <CardDescription>
-            {info?.valid ? (info.email ? `This invitation is for ${info.email}.` : "Create your account.") : info ? "This invitation is invalid or has expired." : "Checking invitation…"}
+            {info?.valid ? (info.email ? t("This invitation is for {email}.", { email: info.email }) : t("Create your account.")) : info ? t("This invitation is invalid or has expired.") : t("Checking invitation…")}
           </CardDescription>
         </CardHeader>
         {info?.valid ? (
@@ -271,22 +274,22 @@ export function InvitePage() {
             <ProviderButtons enabled={info.methods} query={`invite=${encodeURIComponent(token)}`} primary={!info.methods.password} />
             {anyProvider(info.methods) && info.methods.password ? (
               <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <Separator className="flex-1" /> or <Separator className="flex-1" />
+                <Separator className="flex-1" />{" "}{t("or")}{" "}<Separator className="flex-1" />
               </div>
             ) : null}
             {!info.methods.password && !info.email ? (
               <p className="text-sm text-muted-foreground">
-                {anyProvider(info.methods) ? "Continue with one of the accounts above." : "Ask an Admin for an invitation linked to your email address."}
+                {anyProvider(info.methods) ? t("Continue with one of the accounts above.") : t("Ask an Admin for an invitation linked to your email address.")}
               </p>
             ) : null}
             {info.methods.password ? (
-              <form onSubmit={submit} className="grid gap-3" aria-label="Create account with email">
+              <form onSubmit={submit} className="grid gap-3" aria-label={t("Create account with email")}>
                 <div className="grid gap-2">
-                  <Label htmlFor="inv-name">Name</Label>
+                  <Label htmlFor="inv-name">{t("Name")}</Label>
                   <Input id="inv-name" autoComplete="name" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="inv-email">Email</Label>
+                  <Label htmlFor="inv-email">{t("Email")}</Label>
                   <Input
                     id="inv-email"
                     type="email"
@@ -297,11 +300,11 @@ export function InvitePage() {
                     onChange={(e) => setEmail(e.target.value)}
                   />
                 </div>
-                <PasswordField id="inv-pw" label="Password (10+ characters)" value={pw} onChange={setPw} autoComplete="new-password" />
-                <PasswordField id="inv-pw2" label="Confirm password" value={pw2} onChange={setPw2} autoComplete="new-password" />
+                <PasswordField id="inv-pw" label={t("Password (10+ characters)")} value={pw} onChange={setPw} autoComplete="new-password" />
+                <PasswordField id="inv-pw2" label={t("Confirm password")} value={pw2} onChange={setPw2} autoComplete="new-password" />
                 {error ? <Err>{error}</Err> : null}
                 <Button type="submit" size="lg" disabled={busy}>
-                  Create account
+                  {t("Create account")}
                 </Button>
               </form>
             ) : null}
@@ -309,7 +312,7 @@ export function InvitePage() {
         ) : info ? (
           <CardFooter>
             <Button asChild variant="outline" className="w-full">
-              <Link to="/login">Go to sign in</Link>
+              <Link to="/login">{t("Go to sign in")}</Link>
             </Button>
           </CardFooter>
         ) : (
@@ -337,7 +340,7 @@ export function ResetPasswordPage() {
   }, [token]);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (pw !== pw2) return setError("Passwords don’t match");
+    if (pw !== pw2) return setError(t("Passwords don’t match"));
     setBusy(true);
     setError(null);
     try {
@@ -354,30 +357,30 @@ export function ResetPasswordPage() {
       <Card>
         <CardHeader>
           <CardTitle>
-            <h1 className="text-xl">Set a new password</h1>
+            <h1 className="text-xl">{t("Set a new password")}</h1>
           </CardTitle>
           <CardDescription>
-            {done ? "Your password was changed. You were signed out everywhere." : info?.valid ? `For ${info.email}` : info ? "This reset link is invalid or has expired." : "Checking link…"}
+            {done ? t("Your password was changed. You were signed out everywhere.") : info?.valid ? t("For {email}", { email: info.email ?? "" }) : info ? t("This reset link is invalid or has expired.") : t("Checking link…")}
           </CardDescription>
         </CardHeader>
         {info?.valid && !done ? (
           <form onSubmit={submit}>
             <CardContent className="grid gap-3">
               <input type="email" autoComplete="username" value={info.email} readOnly hidden />
-              <PasswordField id="rp-pw" label="New password (10+ characters)" value={pw} onChange={setPw} autoComplete="new-password" />
-              <PasswordField id="rp-pw2" label="Confirm password" value={pw2} onChange={setPw2} autoComplete="new-password" />
+              <PasswordField id="rp-pw" label={t("New password (10+ characters)")} value={pw} onChange={setPw} autoComplete="new-password" />
+              <PasswordField id="rp-pw2" label={t("Confirm password")} value={pw2} onChange={setPw2} autoComplete="new-password" />
               {error ? <Err>{error}</Err> : null}
             </CardContent>
             <CardFooter className="mt-4">
               <Button type="submit" className="w-full" disabled={busy}>
-                Save password
+                {t("Save password")}
               </Button>
             </CardFooter>
           </form>
         ) : (
           <CardFooter>
             <Button asChild variant="outline" className="w-full">
-              <Link to="/login">Go to sign in</Link>
+              <Link to="/login">{t("Go to sign in")}</Link>
             </Button>
           </CardFooter>
         )}
@@ -395,13 +398,13 @@ export function NotAuthorizedPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ShieldAlert className="size-5 text-warning" aria-hidden />
-            <h1 className="text-xl">No access</h1>
+            <h1 className="text-xl">{t("No access")}</h1>
           </CardTitle>
-          <CardDescription>{DENIED[reason] ?? DENIED.not_invited}</CardDescription>
+          <CardDescription>{t(DENIED[reason] ?? "Your account is not on this FileNest’s member list. Ask an Admin for an invitation.")}</CardDescription>
         </CardHeader>
         <CardFooter>
           <Button asChild variant="outline" className="w-full">
-            <Link to="/login">Try another account</Link>
+            <Link to="/login">{t("Try another account")}</Link>
           </Button>
         </CardFooter>
       </Card>

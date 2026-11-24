@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { api } from "@/lib/api";
 import { useApi, useDebounced } from "@/lib/hooks";
 import { formatBytes, formatDate } from "@/lib/utils";
+import { t } from "@/i18n";
 
 interface LinkRow {
   id: string;
@@ -29,10 +30,10 @@ export function PublicLinksPage() {
   const [revoke, setRevoke] = useState<LinkRow | null>(null);
   return (
     <div className="grid gap-4">
-      <p className="text-sm text-muted-foreground">Every active “anyone with the link” share. Revoking takes effect immediately; the owner can create a new link.</p>
+      <p className="text-sm text-muted-foreground">{t("Every active “anyone with the link” share. Revoking takes effect immediately; the owner can create a new link.")}</p>
       <div className="relative max-w-sm">
         <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-        <Input aria-label="Search by file name" placeholder="Search by file name" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
+        <Input aria-label={t("Search by file name")} placeholder={t("Search by file name")} value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
       </div>
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {loading && !data ? <Spinner /> : null}
@@ -41,11 +42,11 @@ export function PublicLinksPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>File</TableHead>
-                <TableHead className="hidden md:table-cell">Owner</TableHead>
-                <TableHead className="hidden md:table-cell">Created</TableHead>
+                <TableHead>{t("File")}</TableHead>
+                <TableHead className="hidden md:table-cell">{t("Owner")}</TableHead>
+                <TableHead className="hidden md:table-cell">{t("Created")}</TableHead>
                 <TableHead className="text-right">
-                  <span className="sr-only">Actions</span>
+                  <span className="sr-only">{t("Actions")}</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -57,7 +58,7 @@ export function PublicLinksPage() {
                       <span className="truncate font-medium">{l.fileName}</span>
                       {l.passwordProtected ? (
                         <Badge variant="secondary">
-                          <KeyRound /> Password
+                          <KeyRound />{" "}{t("Password")}
                         </Badge>
                       ) : null}
                     </div>
@@ -67,7 +68,7 @@ export function PublicLinksPage() {
                   <TableCell className="hidden text-muted-foreground md:table-cell">{formatDate(l.createdAt)}</TableCell>
                   <TableCell className="text-right">
                     <Button size="sm" variant="outline" onClick={() => setRevoke(l)}>
-                      <Link2Off /> Revoke
+                      <Link2Off />{" "}{t("Revoke")}
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -75,7 +76,7 @@ export function PublicLinksPage() {
               {!data.links.length ? (
                 <TableRow>
                   <TableCell colSpan={4} className="text-muted-foreground">
-                    No active public links.
+                    {t("No active public links.")}
                   </TableCell>
                 </TableRow>
               ) : null}
@@ -85,14 +86,14 @@ export function PublicLinksPage() {
       ) : null}
       <ConfirmDialog
         open={!!revoke}
-        title="Revoke this public link?"
-        body={`“${revoke?.fileName ?? ""}” will no longer be reachable through its link.`}
-        confirmLabel="Revoke link"
+        title={t("Revoke this public link?")}
+        body={t("“{name}” will no longer be reachable through its link.", { name: revoke?.fileName ?? "" })}
+        confirmLabel={t("Revoke link")}
         destructive
         onClose={() => setRevoke(null)}
         onConfirm={async () => {
           await api(`/api/admin/public-links/${revoke!.id}`, { method: "DELETE" });
-          toast.success("Link revoked");
+          toast.success(t("Link revoked"));
           void reload();
         }}
       />

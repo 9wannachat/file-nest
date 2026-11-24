@@ -1,4 +1,4 @@
-import { ChevronsUpDown, Download, FolderOpen, HardDrive, KeyRound, LogOut, Palette, RefreshCw, Search, Share2, Shield, Trash2, WifiOff } from "lucide-react";
+import { ChevronsUpDown, Download, FolderOpen, HardDrive, KeyRound, Languages, LogOut, Palette, RefreshCw, Search, Share2, Shield, Trash2, WifiOff } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { USAGE_CHANGED_EVENT, useAuth, useMe } from "@/auth";
@@ -44,7 +44,9 @@ import { UPLOADED_EVENT, useUploads } from "@/upload/UploadProvider";
 import { CommandPalette, OPEN_PALETTE_EVENT } from "./CommandPalette";
 import { Logo } from "./Logo";
 import { ThemeRadioItems } from "./ThemeToggle";
+import { LanguageRadioItems } from "./LanguageSwitcher";
 import { QuotaBanner, QuotaBar } from "./quota";
+import { t } from "@/i18n";
 
 export function OfflineBanner() {
   const online = useOnline();
@@ -52,7 +54,7 @@ export function OfflineBanner() {
   return (
     <div role="status" className="flex items-center gap-2 bg-warning/20 px-4 py-2 text-sm">
       <WifiOff className="size-4 shrink-0" aria-hidden />
-      You are offline. An internet connection is required to open and upload files.
+      {t("You are offline. An internet connection is required to open and upload files.")}
     </div>
   );
 }
@@ -64,10 +66,10 @@ function PwaBar() {
   return (
     <div role="status" className="flex flex-wrap items-center gap-3 bg-primary px-4 py-2 text-sm text-primary-foreground">
       <RefreshCw className="size-4" aria-hidden />
-      <span className="flex-1">{waitingForUploads ? "Update will apply when your uploads finish." : "A new version of FileNest is available."}</span>
+      <span className="flex-1">{waitingForUploads ? t("Update will apply when your uploads finish.") : t("A new version of FileNest is available.")}</span>
       {!waitingForUploads ? (
         <Button size="sm" variant="secondary" onClick={applyUpdate}>
-          Update
+          {t("Update")}
         </Button>
       ) : null}
     </div>
@@ -81,25 +83,25 @@ function InstallItem() {
   return (
     <>
       <SidebarMenuItem>
-        <SidebarMenuButton onClick={() => (canPrompt ? void install() : setIosOpen(true))} tooltip="Install app">
-          <Download /> <span>Install app</span>
+        <SidebarMenuButton onClick={() => (canPrompt ? void install() : setIosOpen(true))} tooltip={t("Install app")}>
+          <Download /> <span>{t("Install app")}</span>
         </SidebarMenuButton>
       </SidebarMenuItem>
       <Dialog open={iosOpen} onOpenChange={setIosOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Install FileNest on iPhone or iPad</DialogTitle>
-            <DialogDescription>Add it to your Home Screen from Safari.</DialogDescription>
+            <DialogTitle>{t("Install FileNest on iPhone or iPad")}</DialogTitle>
+            <DialogDescription>{t("Add it to your Home Screen from Safari.")}</DialogDescription>
           </DialogHeader>
           <ol className="list-decimal space-y-2 pl-5 text-sm">
             <li>
-              Tap the <strong>Share</strong> button in Safari’s toolbar.
+              {t("Tap the")}{" "}<strong>{t("Share")}</strong>{" "}{t("button in Safari’s toolbar.")}
             </li>
             <li>
-              Choose <strong>Add to Home Screen</strong>.
+              {t("Choose")}{" "}<strong>{t("Add to Home Screen")}</strong>.
             </li>
             <li>
-              Tap <strong>Add</strong>, then open FileNest from your Home Screen.
+              {t("Tap")}{" "}<strong>{t("Add")}</strong>{t(", then open FileNest from your Home Screen.")}
             </li>
           </ol>
         </DialogContent>
@@ -142,13 +144,13 @@ function UserMenu({ compact }: { compact?: boolean }) {
     <DropdownMenu>
       {compact ? (
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="tap-target rounded-full" aria-label={`Account: ${me.user.email}`}>
+          <Button variant="ghost" size="icon" className="tap-target rounded-full" aria-label={t("Account: {email}", { email: me.user.email })}>
             {avatar}
           </Button>
         </DropdownMenuTrigger>
       ) : (
         <DropdownMenuTrigger asChild>
-          <SidebarMenuButton size="lg" aria-label={`Account: ${me.user.email}`} className="data-[state=open]:bg-sidebar-accent">
+          <SidebarMenuButton size="lg" aria-label={t("Account: {email}", { email: me.user.email })} className="data-[state=open]:bg-sidebar-accent">
             {avatar}
             <span className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-medium">{display}</span>
@@ -167,19 +169,27 @@ function UserMenu({ compact }: { compact?: boolean }) {
         <DropdownMenuGroup>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
-              <Palette /> Theme
+              <Palette />{" "}{t("Theme")}
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               <ThemeRadioItems />
             </DropdownMenuSubContent>
           </DropdownMenuSub>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <Languages /> {t("Language")}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <LanguageRadioItems />
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
           <DropdownMenuItem onSelect={() => navigate("/settings")}>
-            <KeyRound /> Settings & API tokens
+            <KeyRound />{" "}{t("Settings & API tokens")}
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => void logout()}>
-          <LogOut /> Sign out
+          <LogOut />{" "}{t("Sign out")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -192,12 +202,12 @@ function AppSidebar() {
   const loc = useLocation();
   useEffect(() => setOpenMobile(false), [loc.pathname, setOpenMobile]);
   return (
-    <Sidebar collapsible="icon" aria-label="Main">
+    <Sidebar collapsible="icon" aria-label={t("Main")}>
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
-              <Link to="/" aria-label="FileNest home">
+              <Link to="/" aria-label={t("FileNest home")}>
                 <Logo className="size-8 shrink-0" />
                 <span className="text-base font-semibold tracking-tight">
                   File<span className="text-primary">Nest</span>
@@ -211,10 +221,10 @@ function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              <NavItem to="/" end icon={<FolderOpen />} label="My Drive" />
-              <NavItem to="/shared" icon={<Share2 />} label="Shared with me" />
-              <NavItem to="/trash" icon={<Trash2 />} label="Trash" />
-              {me.user.role === "admin" ? <NavItem to="/admin" icon={<Shield />} label="Admin" /> : null}
+              <NavItem to="/" end icon={<FolderOpen />} label={t("My Drive")} />
+              <NavItem to="/shared" icon={<Share2 />} label={t("Shared with me")} />
+              <NavItem to="/trash" icon={<Trash2 />} label={t("Trash")} />
+              {me.user.role === "admin" ? <NavItem to="/admin" icon={<Shield />} label={t("Admin")} /> : null}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -242,15 +252,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Keep the storage meter current after uploads/purges: debounced, and a failure
   // never changes auth state (so in-flight uploads keep running).
   useEffect(() => {
-    let t: ReturnType<typeof setTimeout> | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const on = () => {
-      clearTimeout(t);
-      t = setTimeout(refreshSilently, 800);
+      clearTimeout(timer);
+      timer = setTimeout(refreshSilently, 800);
     };
     window.addEventListener(UPLOADED_EVENT, on);
     window.addEventListener(USAGE_CHANGED_EVENT, on);
     return () => {
-      clearTimeout(t);
+      clearTimeout(timer);
       window.removeEventListener(UPLOADED_EVENT, on);
       window.removeEventListener(USAGE_CHANGED_EVENT, on);
     };
@@ -262,7 +272,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2"
       >
-        Skip to content
+        {t("Skip to content")}
       </a>
       <AppSidebar />
       <SidebarInset className="min-h-0 overflow-hidden">
@@ -270,16 +280,16 @@ export function AppShell({ children }: { children: ReactNode }) {
         <PwaBar />
         <QuotaBannerForMe />
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3 sm:px-4">
-          <SidebarTrigger aria-label="Toggle navigation" className="tap-target" />
+          <SidebarTrigger aria-label={t("Toggle navigation")} className="tap-target" />
           <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-5" />
           <Button
             variant="outline"
             className="h-9 max-w-md flex-1 justify-start gap-2 text-muted-foreground"
             onClick={() => window.dispatchEvent(new Event(OPEN_PALETTE_EVENT))}
-            aria-label="Search files"
+            aria-label={t("Search files")}
           >
             <Search className="size-4" />
-            <span className="truncate">Search files…</span>
+            <span className="truncate">{t("Search files…")}</span>
             <Kbd className="ml-auto hidden sm:inline-flex">⌘K</Kbd>
           </Button>
           <div className="ml-auto md:hidden">

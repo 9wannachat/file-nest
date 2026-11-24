@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { api, errorMessage } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import { cn, formatBytes } from "@/lib/utils";
+import { t } from "@/i18n";
 
 interface UsageRow {
   id: string;
@@ -44,7 +45,7 @@ export function UsagePage() {
         method: "POST",
         body: { userIds: [...sel], quotaBytes: quota === "unlimited" ? null : Number(quota) * GB },
       });
-      toast.success(`Quota updated for ${r.updated} member(s)`);
+      toast.success(t("Quota updated for {updated} member(s)", { updated: r.updated }));
       setSel(new Set());
       void reload();
     } catch (e) {
@@ -64,38 +65,38 @@ export function UsagePage() {
     <div className="grid gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>Total storage</CardTitle>
+          <CardTitle>{t("Total storage")}</CardTitle>
           <CardDescription>
-            {formatBytes(data.totalBytes)} used{data.capBytes ? ` of ${formatBytes(data.capBytes)} total capacity (all R2 targets)` : " · no capacity limit"}
+            {formatBytes(data.totalBytes)}{" "}{t("used")}{data.capBytes ? t(" of {capBytes} total capacity (all R2 targets)", { capBytes: formatBytes(data.capBytes) }) : t(" · no capacity limit")}
           </CardDescription>
         </CardHeader>
         {capPct !== null ? (
           <CardContent>
-            <Progress value={capPct} aria-label="Total storage used" className={capPct >= 95 ? "[&>div]:bg-destructive" : capPct >= 80 ? "[&>div]:bg-warning" : undefined} />
+            <Progress value={capPct} aria-label={t("Total storage used")} className={capPct >= 95 ? "[&>div]:bg-destructive" : capPct >= 80 ? "[&>div]:bg-warning" : undefined} />
           </CardContent>
         ) : null}
       </Card>
 
       <div className="flex flex-wrap items-center gap-2">
         <Select value={filter} onValueChange={(v) => (setFilter(v), setSel(new Set()))}>
-          <SelectTrigger aria-label="Filter members" className="w-48">
+          <SelectTrigger aria-label={t("Filter members")} className="w-48">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All members</SelectItem>
-            <SelectItem value="near">80% of quota or more</SelectItem>
-            <SelectItem value="over">Over quota</SelectItem>
+            <SelectItem value="all">{t("All members")}</SelectItem>
+            <SelectItem value="near">{t("80% of quota or more")}</SelectItem>
+            <SelectItem value="over">{t("Over quota")}</SelectItem>
           </SelectContent>
         </Select>
         {sel.size ? (
-          <div role="toolbar" aria-label="Bulk quota" className="ml-auto flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-1.5">
-            <span className="text-sm">{sel.size} selected · set quota to</span>
+          <div role="toolbar" aria-label={t("Bulk quota")} className="ml-auto flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-1.5">
+            <span className="text-sm">{sel.size}{" "}{t("selected · set quota to")}</span>
             <Select value={quota} onValueChange={setQuota}>
-              <SelectTrigger aria-label="New quota" size="sm" className="w-28">
+              <SelectTrigger aria-label={t("New quota")} size="sm" className="w-28">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="unlimited">Unlimited</SelectItem>
+                <SelectItem value="unlimited">{t("Unlimited")}</SelectItem>
                 {[1, 5, 10, 25, 50, 100, 250, 500, 1000].map((g) => (
                   <SelectItem key={g} value={String(g)}>
                     {formatBytes(g * GB)}
@@ -104,7 +105,7 @@ export function UsagePage() {
               </SelectContent>
             </Select>
             <Button size="sm" disabled={busy} onClick={() => void apply()}>
-              Apply
+              {t("Apply")}
             </Button>
           </div>
         ) : null}
@@ -116,15 +117,15 @@ export function UsagePage() {
             <TableRow>
               <TableHead className="w-8">
                 <Checkbox
-                  aria-label="Select all"
+                  aria-label={t("Select all")}
                   checked={allSel ? true : sel.size ? "indeterminate" : false}
                   onCheckedChange={(v) => setSel(v === true ? new Set(data.members.slice(0, 100).map((m) => m.id)) : new Set())}
                 />
               </TableHead>
-              <TableHead>Member</TableHead>
-              <TableHead className="w-56">Usage</TableHead>
-              <TableHead className="hidden md:table-cell">In trash</TableHead>
-              <TableHead className="hidden md:table-cell">Files</TableHead>
+              <TableHead>{t("Member")}</TableHead>
+              <TableHead className="w-56">{t("Usage")}</TableHead>
+              <TableHead className="hidden md:table-cell">{t("In trash")}</TableHead>
+              <TableHead className="hidden md:table-cell">{t("Files")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -134,7 +135,7 @@ export function UsagePage() {
                 <TableRow key={m.id} data-state={sel.has(m.id) ? "selected" : undefined}>
                   <TableCell>
                     <Checkbox
-                      aria-label={`Select ${m.email}`}
+                      aria-label={t("Select {email}", { email: m.email })}
                       checked={sel.has(m.id)}
                       onCheckedChange={(v) => {
                         const next = new Set(sel);
@@ -156,12 +157,12 @@ export function UsagePage() {
                         <span>
                           {formatBytes(m.usedBytes)} / {m.quotaUnlimited ? "∞" : formatBytes(m.quotaBytes)}
                         </span>
-                        {m.percent !== null && pct > 100 ? <Badge variant="destructive">Over</Badge> : m.percent !== null ? <span className="tabular-nums">{Math.round(pct)}%</span> : null}
+                        {m.percent !== null && pct > 100 ? <Badge variant="destructive">{t("Over")}</Badge> : m.percent !== null ? <span className="tabular-nums">{Math.round(pct)}%</span> : null}
                       </div>
                       {m.quotaUnlimited ? null : (
                         <Progress
                           value={Math.min(100, pct)}
-                          aria-label={`${m.email} storage`}
+                          aria-label={t("{email} storage", { email: m.email })}
                           className={cn("h-1.5", pct >= 95 ? "[&>div]:bg-destructive" : pct >= 80 ? "[&>div]:bg-warning" : undefined)}
                         />
                       )}
@@ -175,7 +176,7 @@ export function UsagePage() {
             {!data.members.length ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-muted-foreground">
-                  No members match.
+                  {t("No members match.")}
                 </TableCell>
               </TableRow>
             ) : null}

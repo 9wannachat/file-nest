@@ -200,6 +200,30 @@ test("theme: System follows the OS, explicit choice persists, share page matches
   await expect(page.locator("html")).not.toHaveClass(/dark/);
 });
 
+test("language: Thai on the sign-in page and in the app, switch back without losing the page", async ({ page, browser }) => {
+  const anon = await browser.newContext();
+  const p = await anon.newPage();
+  await p.goto("/login");
+  await p.getByRole("button", { name: "Language" }).click();
+  await p.getByRole("menuitemradio", { name: "ไทย" }).click();
+  await expect(p.locator("html")).toHaveAttribute("lang", "th");
+  await expect(p.getByRole("link", { name: "ดำเนินการต่อด้วย Google" })).toBeVisible();
+  await p.reload();
+  await expect(p.getByRole("link", { name: "ดำเนินการต่อด้วย Google" })).toBeVisible(); // remembered via fn_lang
+  await anon.close();
+
+  await devLogin(page);
+  await page.getByRole("button", { name: /^Account:/ }).click();
+  await page.getByRole("menuitem", { name: "Language" }).click();
+  await page.getByRole("menuitemradio", { name: "ไทย" }).click();
+  await expect(page.getByRole("link", { name: "ไดรฟ์ของฉัน" }).first()).toBeVisible();
+  await page.goto("/settings");
+  await expect(page.getByText("การแสดงผล", { exact: true })).toBeVisible();
+  await page.getByRole("radio", { name: "English" }).click();
+  await expect(page.getByText("Appearance", { exact: true })).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+});
+
 function totp(secretB32: string, at = Date.now()): string {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
   let bits = 0;

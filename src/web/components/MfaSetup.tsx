@@ -6,19 +6,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, errorMessage } from "@/lib/api";
 import { QrCode } from "./QrCode";
+import { t } from "@/i18n";
 
 export function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone?: () => void }) {
   const text = codes.join("\n");
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text);
-      toast.success("Recovery codes copied");
+      toast.success(t("Recovery codes copied"));
     } catch {
-      toast.error("Could not copy");
+      toast.error(t("Could not copy"));
     }
   };
   const download = () => {
-    const url = URL.createObjectURL(new Blob([`FileNest recovery codes\n\n${text}\n`], { type: "text/plain" }));
+    const url = URL.createObjectURL(new Blob([t("FileNest recovery codes\n\n{text}\n", { text: text })], { type: "text/plain" }));
     const a = document.createElement("a");
     a.href = url;
     a.download = "filenest-recovery-codes.txt";
@@ -28,23 +29,23 @@ export function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone?: () 
   return (
     <div className="grid gap-3">
       <p className="text-sm text-muted-foreground">
-        Save these one-time codes somewhere safe. Each can be used once if you lose your authenticator. They won’t be shown again.
+        {t("Save these one-time codes somewhere safe. Each can be used once if you lose your authenticator. They won’t be shown again.")}
       </p>
-      <ul aria-label="Recovery codes" className="grid grid-cols-2 gap-2 rounded-md border bg-muted p-3 font-mono text-sm">
+      <ul aria-label={t("Recovery codes")} className="grid grid-cols-2 gap-2 rounded-md border bg-muted p-3 font-mono text-sm">
         {codes.map((c) => (
           <li key={c}>{c}</li>
         ))}
       </ul>
       <div className="flex flex-wrap gap-2">
         <Button type="button" variant="outline" size="sm" onClick={() => void copy()}>
-          <Copy /> Copy
+          <Copy />{" "}{t("Copy")}
         </Button>
         <Button type="button" variant="outline" size="sm" onClick={download}>
-          <Download /> Download
+          <Download />{" "}{t("Download")}
         </Button>
         {onDone ? (
           <Button type="button" size="sm" className="ml-auto" onClick={onDone}>
-            I saved them
+            {t("I saved them")}
           </Button>
         ) : null}
       </div>
@@ -88,26 +89,26 @@ export function MfaSetup({ onEnabled }: { onEnabled: () => void }) {
   if (!setup) {
     return (
       <Button onClick={() => void start()} disabled={busy}>
-        <ShieldCheck /> Set up authenticator app
+        <ShieldCheck />{" "}{t("Set up authenticator app")}
       </Button>
     );
   }
   return (
     <form onSubmit={confirm} className="grid gap-4">
       <ol className="grid list-decimal gap-1 pl-5 text-sm text-muted-foreground">
-        <li>Open an authenticator app (Google Authenticator, 1Password, Authy…).</li>
-        <li>Scan the QR code, or enter the key manually.</li>
-        <li>Type the 6-digit code it shows.</li>
+        <li>{t("Open an authenticator app (Google Authenticator, 1Password, Authy…).")}</li>
+        <li>{t("Scan the QR code, or enter the key manually.")}</li>
+        <li>{t("Type the 6-digit code it shows.")}</li>
       </ol>
       <div className="flex flex-col items-start gap-4 sm:flex-row">
-        <QrCode value={setup.otpauthUrl} label="QR code for your authenticator app" />
+        <QrCode value={setup.otpauthUrl} label={t("QR code for your authenticator app")} />
         <div className="grid min-w-0 gap-2">
-          <Label htmlFor="mfa-secret">Setup key</Label>
+          <Label htmlFor="mfa-secret">{t("Setup key")}</Label>
           <code id="mfa-secret" className="rounded-md bg-muted px-2 py-1 text-xs break-all select-all">
             {setup.secret.replace(/(.{4})/g, "$1 ").trim()}
           </code>
           <Label htmlFor="mfa-code" className="mt-2">
-            6-digit code
+            {t("6-digit code")}
           </Label>
           <Input
             id="mfa-code"
@@ -126,7 +127,7 @@ export function MfaSetup({ onEnabled }: { onEnabled: () => void }) {
             </p>
           ) : null}
           <Button type="submit" disabled={busy || code.length !== 6} className="w-fit">
-            Turn on 2FA
+            {t("Turn on 2FA")}
           </Button>
         </div>
       </div>

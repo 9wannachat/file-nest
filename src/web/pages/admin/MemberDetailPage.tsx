@@ -19,6 +19,7 @@ import { api, errorMessage } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import { formatBytes, formatDate } from "@/lib/utils";
 import { statusBadge } from "./MembersPage";
+import { t } from "@/i18n";
 
 interface Detail {
   member: AdminMember;
@@ -51,33 +52,33 @@ function BanDialog({ open, name, onClose, onBan }: { open: boolean; name: string
       <DialogContent className="sm:max-w-md">
         <form onSubmit={submit} className="grid gap-4">
           <DialogHeader>
-            <DialogTitle>Ban {name}?</DialogTitle>
-            <DialogDescription>They are signed out everywhere, their API tokens stop working, and their public links go offline. Files are kept.</DialogDescription>
+            <DialogTitle>{t("Ban")}{" "}{name}?</DialogTitle>
+            <DialogDescription>{t("They are signed out everywhere, their API tokens stop working, and their public links go offline. Files are kept.")}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">
-            <Label htmlFor="ban-reason">Reason (shown in the audit log)</Label>
+            <Label htmlFor="ban-reason">{t("Reason (shown in the audit log)")}</Label>
             <Input id="ban-reason" required maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="ban-days">Duration</Label>
+            <Label htmlFor="ban-days">{t("Duration")}</Label>
             <Select value={days} onValueChange={setDays}>
               <SelectTrigger id="ban-days" className="w-48">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="1">1 day</SelectItem>
-                <SelectItem value="7">7 days</SelectItem>
-                <SelectItem value="30">30 days</SelectItem>
-                <SelectItem value="forever">Until lifted</SelectItem>
+                <SelectItem value="1">{t("1 day")}</SelectItem>
+                <SelectItem value="7">{t("7 days")}</SelectItem>
+                <SelectItem value="30">{t("30 days")}</SelectItem>
+                <SelectItem value="forever">{t("Until lifted")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button type="submit" variant="destructive" disabled={busy || !reason.trim()}>
-              <Ban /> Ban member
+              <Ban />{" "}{t("Ban member")}
             </Button>
           </DialogFooter>
         </form>
@@ -115,7 +116,7 @@ export function MemberDetailPage() {
     <div className="grid gap-4">
       <Button asChild variant="ghost" size="sm" className="w-fit">
         <Link to="/admin/members">
-          <ArrowLeft /> Members
+          <ArrowLeft />{" "}{t("Members")}
         </Link>
       </Button>
       <Card>
@@ -125,47 +126,47 @@ export function MemberDetailPage() {
           </Avatar>
           <div className="min-w-0 flex-1">
             <CardTitle className="flex flex-wrap items-center gap-2 text-lg">
-              <h2 className="truncate">{m.name ?? m.email}</h2> {statusBadge(m)} {m.role === "admin" ? <Badge>Admin</Badge> : null}
+              <h2 className="truncate">{m.name ?? m.email}</h2> {statusBadge(m)} {m.role === "admin" ? <Badge>{t("Admin")}</Badge> : null}
             </CardTitle>
             <CardDescription className="truncate">{m.email}</CardDescription>
           </div>
         </CardHeader>
         <CardContent className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <div className="text-muted-foreground">Storage</div>
+            <div className="text-muted-foreground">{t("Storage")}</div>
             <div>
-              {formatBytes(m.usedBytes)} of {m.quotaUnlimited ? "unlimited" : formatBytes(m.quotaBytes)} · {m.fileCount} files
+              {formatBytes(m.usedBytes)}{" "}{t("of")}{" "}{m.quotaUnlimited ? "unlimited" : formatBytes(m.quotaBytes)} · {m.fileCount}{" "}{t("files")}
             </div>
           </div>
           <div>
-            <div className="text-muted-foreground">Sign-in methods</div>
+            <div className="text-muted-foreground">{t("Sign-in methods")}</div>
             <div className="flex flex-wrap gap-1">
               {m.identities.map((p) => (
                 <Badge key={p} variant="outline">
                   {PROVIDER_LABELS[p]}
                 </Badge>
               ))}
-              {m.hasPassword ? <Badge variant="outline">Password</Badge> : null}
+              {m.hasPassword ? <Badge variant="outline">{t("Password")}</Badge> : null}
               {m.mfaEnabled ? (
                 <Badge variant="secondary">
-                  <ShieldCheck /> 2FA
+                  <ShieldCheck />{" "}{t("2FA")}
                 </Badge>
               ) : (
-                <Badge variant="outline">No 2FA</Badge>
+                <Badge variant="outline">{t("No 2FA")}</Badge>
               )}
             </div>
           </div>
           <div>
-            <div className="text-muted-foreground">Last sign-in</div>
-            <div>{m.lastLoginAt ? formatDate(m.lastLoginAt) : "Never"}</div>
+            <div className="text-muted-foreground">{t("Last sign-in")}</div>
+            <div>{m.lastLoginAt ? formatDate(m.lastLoginAt) : t("Never")}</div>
           </div>
           <div>
-            <div className="text-muted-foreground">Joined</div>
+            <div className="text-muted-foreground">{t("Joined")}</div>
             <div>{formatDate(m.createdAt)}</div>
           </div>
           {m.status === "disabled" && m.bannedReason ? (
             <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 sm:col-span-2 lg:col-span-4">
-              Banned: {m.bannedReason} {m.bannedUntil ? `· until ${formatDate(m.bannedUntil)}` : "· until lifted"}
+              {t("Banned:")}{" "}{m.bannedReason} {m.bannedUntil ? t("· until {date}", { date: formatDate(m.bannedUntil) }) : t("· until lifted")}
             </div>
           ) : null}
         </CardContent>
@@ -173,40 +174,40 @@ export function MemberDetailPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Manage</CardTitle>
-          <CardDescription>Sensitive actions ask you to confirm it’s you.</CardDescription>
+          <CardTitle>{t("Manage")}</CardTitle>
+          <CardDescription>{t("Sensitive actions ask you to confirm it’s you.")}</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="grid gap-2">
-              <Label htmlFor="m-role">Role</Label>
-              <Select value={m.role} disabled={self} onValueChange={(v) => void act(() => api(base, { method: "PATCH", body: { role: v } }), "Role updated")}>
+              <Label htmlFor="m-role">{t("Role")}</Label>
+              <Select value={m.role} disabled={self} onValueChange={(v) => void act(() => api(base, { method: "PATCH", body: { role: v } }), t("Role updated"))}>
                 <SelectTrigger id="m-role" className="w-32">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="member">Member</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="member">{t("Member")}</SelectItem>
+                  <SelectItem value="admin">{t("Admin")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="m-quota">Quota</Label>
+              <Label htmlFor="m-quota">{t("Quota")}</Label>
               <Select
                 value={m.quotaUnlimited ? "unlimited" : String(Math.round(m.quotaBytes / GB))}
                 onValueChange={(v) => {
                   const bytes = v === "unlimited" ? null : Number(v) * GB;
                   if (bytes !== null && bytes < m.usedBytes) {
-                    toast.warning(`${m.email} already uses ${formatBytes(m.usedBytes)}. Their files stay, but uploads are blocked until they free space.`);
+                    toast.warning(t("{email} already uses {usedBytes}. Their files stay, but uploads are blocked until they free space.", { email: m.email, usedBytes: formatBytes(m.usedBytes) }));
                   }
-                  void act(() => api(base, { method: "PATCH", body: { quotaBytes: bytes } }), "Quota updated");
+                  void act(() => api(base, { method: "PATCH", body: { quotaBytes: bytes } }), t("Quota updated"));
                 }}
               >
                 <SelectTrigger id="m-quota" className="w-32">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="unlimited">Unlimited</SelectItem>
+                  <SelectItem value="unlimited">{t("Unlimited")}</SelectItem>
                   {[...new Set([...QUOTAS, Math.round(m.quotaBytes / GB)])]
                     .sort((a, b) => a - b)
                     .map((g) => (
@@ -220,38 +221,38 @@ export function MemberDetailPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             {m.status === "disabled" ? (
-              <Button variant="outline" onClick={() => void act(() => api(`${base}/unban`, { method: "POST" }), "Member restored")}>
-                <Undo2 /> {m.bannedReason ? "Lift ban" : "Re-enable"}
+              <Button variant="outline" onClick={() => void act(() => api(`${base}/unban`, { method: "POST" }), t("Member restored"))}>
+                <Undo2 /> {m.bannedReason ? t("Lift ban") : t("Re-enable")}
               </Button>
             ) : (
               <Button variant="destructive" disabled={self} onClick={() => setBanOpen(true)}>
-                <Ban /> Ban
+                <Ban />{" "}{t("Ban")}
               </Button>
             )}
             <Button
               variant="outline"
               disabled={m.sessionCount === 0}
               onClick={() =>
-                setConfirm({ title: "Sign out everywhere?", body: `${m.email} will be signed out of all devices.`, label: "Sign out", fn: () => api(`${base}/revoke-sessions`, { method: "POST" }), ok: "Signed out everywhere" })
+                setConfirm({ title: t("Sign out everywhere?"), body: t("{email} will be signed out of all devices.", { email: m.email }), label: t("Sign out"), fn: () => api(`${base}/revoke-sessions`, { method: "POST" }), ok: t("Signed out everywhere") })
               }
             >
-              <LogOut /> Sign out everywhere ({m.sessionCount})
+              <LogOut />{" "}{t("Sign out everywhere (")}{m.sessionCount})
             </Button>
             <Button
               variant="outline"
               disabled={!data.tokens.some((t) => !t.revokedAt)}
-              onClick={() => setConfirm({ title: "Revoke all API tokens?", body: "Tools such as the MCP server will stop working until new tokens are created.", label: "Revoke", fn: () => api(`${base}/revoke-tokens`, { method: "POST" }), ok: "Tokens revoked" })}
+              onClick={() => setConfirm({ title: t("Revoke all API tokens?"), body: t("Tools such as the MCP server will stop working until new tokens are created."), label: t("Revoke"), fn: () => api(`${base}/revoke-tokens`, { method: "POST" }), ok: t("Tokens revoked") })}
             >
-              <KeyRound /> Revoke API tokens
+              <KeyRound />{" "}{t("Revoke API tokens")}
             </Button>
             <Button
               variant="outline"
               disabled={!m.mfaEnabled || self}
               onClick={() =>
-                setConfirm({ title: "Reset two-factor authentication?", body: "Their authenticator and recovery codes are removed and they are signed out. Only do this after verifying who they are.", label: "Reset 2FA", fn: () => api(`${base}/reset-2fa`, { method: "POST" }), ok: "2FA reset" })
+                setConfirm({ title: t("Reset two-factor authentication?"), body: t("Their authenticator and recovery codes are removed and they are signed out. Only do this after verifying who they are."), label: t("Reset 2FA"), fn: () => api(`${base}/reset-2fa`, { method: "POST" }), ok: t("2FA reset") })
               }
             >
-              <ShieldOff /> Reset 2FA
+              <ShieldOff />{" "}{t("Reset 2FA")}
             </Button>
             <Button
               variant="outline"
@@ -265,7 +266,7 @@ export function MemberDetailPage() {
                 }
               }}
             >
-              <KeyRound /> Password reset link
+              <KeyRound />{" "}{t("Password reset link")}
             </Button>
           </div>
         </CardContent>
@@ -274,42 +275,42 @@ export function MemberDetailPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Devices ({data.sessions.length})</CardTitle>
+            <CardTitle>{t("Devices (")}{data.sessions.length})</CardTitle>
           </CardHeader>
           <CardContent>
             <ul className="divide-y text-sm">
               {data.sessions.map((s) => (
                 <li key={s.id} className="py-2">
-                  <div className="truncate">{s.userAgent ?? "Unknown device"}</div>
+                  <div className="truncate">{s.userAgent ?? t("Unknown device")}</div>
                   <div className="text-xs text-muted-foreground">
-                    {s.authMethod ?? "—"} · active {formatDate(s.lastSeenAt)}
+                    {s.authMethod ?? "—"}{" "}{t("· active")}{" "}{formatDate(s.lastSeenAt)}
                   </div>
                 </li>
               ))}
-              {!data.sessions.length ? <li className="py-2 text-muted-foreground">Not signed in.</li> : null}
+              {!data.sessions.length ? <li className="py-2 text-muted-foreground">{t("Not signed in.")}</li> : null}
             </ul>
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>API tokens & public links</CardTitle>
+            <CardTitle>{t("API tokens & public links")}</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 text-sm">
             <ul className="divide-y">
-              {data.tokens.map((t) => (
-                <li key={t.id} className="flex items-center gap-2 py-2">
-                  <span className="flex-1 truncate">{t.name}</span>
-                  <Badge variant={t.revokedAt ? "destructive" : t.expiresAt < Date.now() ? "outline" : "secondary"}>
-                    {t.revokedAt ? "Revoked" : t.expiresAt < Date.now() ? "Expired" : "Active"}
+              {data.tokens.map((tok) => (
+                <li key={tok.id} className="flex items-center gap-2 py-2">
+                  <span className="flex-1 truncate">{tok.name}</span>
+                  <Badge variant={tok.revokedAt ? "destructive" : tok.expiresAt < Date.now() ? "outline" : "secondary"}>
+                    {tok.revokedAt ? t("Revoked") : tok.expiresAt < Date.now() ? t("Expired") : t("Active")}
                   </Badge>
                 </li>
               ))}
-              {!data.tokens.length ? <li className="py-2 text-muted-foreground">No API tokens.</li> : null}
+              {!data.tokens.length ? <li className="py-2 text-muted-foreground">{t("No API tokens.")}</li> : null}
             </ul>
             <div className="text-muted-foreground">
-              {data.publicLinks.length} active public link(s).{" "}
+              {data.publicLinks.length}{" "}{t("active public link(s).")}{" "}
               <Link className="underline" to="/admin/links">
-                Review links
+                {t("Review links")}
               </Link>
             </div>
           </CardContent>
@@ -318,7 +319,7 @@ export function MemberDetailPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Activity</CardTitle>
+          <CardTitle>{t("Activity")}</CardTitle>
         </CardHeader>
         <CardContent>
           <ul className="divide-y text-sm">
@@ -330,7 +331,7 @@ export function MemberDetailPage() {
                 <span className="ml-auto text-xs text-muted-foreground">{formatDate(e.createdAt)}</span>
               </li>
             ))}
-            {!data.activity.length ? <li className="py-2 text-muted-foreground">No activity.</li> : null}
+            {!data.activity.length ? <li className="py-2 text-muted-foreground">{t("No activity.")}</li> : null}
           </ul>
         </CardContent>
       </Card>
@@ -339,7 +340,7 @@ export function MemberDetailPage() {
         open={banOpen}
         name={m.name ?? m.email}
         onClose={() => setBanOpen(false)}
-        onBan={(reason, days) => act(() => api(`${base}/ban`, { method: "POST", body: { reason, days } }), "Member banned")}
+        onBan={(reason, days) => act(() => api(`${base}/ban`, { method: "POST", body: { reason, days } }), t("Member banned"))}
       />
       <ConfirmDialog
         open={!!confirm}
@@ -355,22 +356,22 @@ export function MemberDetailPage() {
       <Dialog open={!!resetUrl} onOpenChange={(o) => !o && setResetUrl(null)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Password reset link</DialogTitle>
-            <DialogDescription>Send this to {m.email} through a trusted channel. It works once and expires in 30 minutes.</DialogDescription>
+            <DialogTitle>{t("Password reset link")}</DialogTitle>
+            <DialogDescription>{t("Send this to")}{" "}{m.email}{" "}{t("through a trusted channel. It works once and expires in 30 minutes.")}</DialogDescription>
           </DialogHeader>
           <div className="flex gap-2">
-            <Input readOnly value={resetUrl ?? ""} aria-label="Reset link" onFocus={(e) => e.currentTarget.select()} className="text-xs" />
+            <Input readOnly value={resetUrl ?? ""} aria-label={t("Reset link")} onFocus={(e) => e.currentTarget.select()} className="text-xs" />
             <Button
               variant="outline"
               onClick={() =>
                 resetUrl &&
                 navigator.clipboard.writeText(resetUrl).then(
-                  () => toast.success("Copied"),
-                  () => toast.error("Could not copy"),
+                  () => toast.success(t("Copied")),
+                  () => toast.error(t("Could not copy")),
                 )
               }
             >
-              <Copy /> Copy
+              <Copy />{" "}{t("Copy")}
             </Button>
           </div>
         </DialogContent>

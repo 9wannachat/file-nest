@@ -1,4 +1,5 @@
 import type { ApiErrorBody } from "@shared/types";
+import { t, tMaybe } from "../i18n";
 
 /** CSRF token lives in memory only (no Web Storage). Set from /api/me. */
 let csrfToken = "";
@@ -35,20 +36,21 @@ export async function api<T>(path: string, opts: { method?: string; body?: unkno
     });
   } catch (e) {
     if ((e as Error).name === "AbortError") throw e;
-    throw new ApiError(0, "network", navigator.onLine ? "Could not reach FileNest. Check your connection." : "You are offline.");
+    throw new ApiError(0, "network", navigator.onLine ? t("Could not reach FileNest. Check your connection.") : t("You are offline."));
   }
   if (res.status === 401) window.dispatchEvent(new Event(UNAUTHENTICATED_EVENT));
   const text = await res.text();
   const data = text ? (JSON.parse(text) as unknown) : null;
   if (!res.ok) {
     const err = (data as ApiErrorBody | null)?.error;
-    throw new ApiError(res.status, err?.code ?? "http_error", err?.message ?? `Request failed (${res.status})`);
+    throw new ApiError(res.status, err?.code ?? "http_error", err?.message ?? t("Request failed ({status})", { status: res.status }));
   }
   return data as T;
 }
 
 export function errorMessage(e: unknown): string {
-  if (e instanceof ApiError) return e.message;
+  // Server messages are English; show the Thai text when the exact message is in the dictionary.
+  if (e instanceof ApiError) return tMaybe(e.message, e.message);
   if (e instanceof Error) return e.message;
-  return "Something went wrong";
+  return t("Something went wrong");
 }

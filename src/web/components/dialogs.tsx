@@ -25,6 +25,7 @@ import { Separator } from "@/components/ui/separator";
 import { api, errorMessage } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import { formatBytes } from "@/lib/utils";
+import { t } from "@/i18n";
 
 export function NameDialog({
   open,
@@ -52,7 +53,7 @@ export function NameDialog({
   }, [open, initial]);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return setError("Name is required");
+    if (!name.trim()) return setError(t("Name is required"));
     setBusy(true);
     setError(null);
     try {
@@ -82,7 +83,7 @@ export function NameDialog({
             <DialogDescription className="sr-only">{title}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">
-            <Label htmlFor="name-input">Name</Label>
+            <Label htmlFor="name-input">{t("Name")}</Label>
             <Input
               id="name-input"
               value={name}
@@ -99,7 +100,7 @@ export function NameDialog({
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button type="submit" disabled={busy}>
               {busy ? <Spinner className="text-primary-foreground" /> : null}
@@ -138,7 +139,7 @@ export function ConfirmDialog({
           <AlertDialogDescription>{body}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogCancel>{t("Cancel")}</AlertDialogCancel>
           <AlertDialogAction
             className={destructive ? buttonVariants({ variant: "destructive" }) : undefined}
             disabled={busy}
@@ -188,12 +189,12 @@ export function MoveDialog({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Move “{itemName}”</DialogTitle>
-          <DialogDescription>Choose a destination folder</DialogDescription>
+          <DialogTitle>{t("Move “")}{itemName}”</DialogTitle>
+          <DialogDescription>{t("Choose a destination folder")}</DialogDescription>
         </DialogHeader>
-        <nav aria-label="Destination path" className="flex flex-wrap items-center gap-1 text-sm">
+        <nav aria-label={t("Destination path")} className="flex flex-wrap items-center gap-1 text-sm">
           <Button variant="ghost" size="sm" onClick={() => setAt(null)}>
-            <Home /> My Drive
+            <Home />{" "}{t("My Drive")}
           </Button>
           {data?.breadcrumb.map((b) => (
             <span key={b.id} className="inline-flex items-center gap-1">
@@ -208,7 +209,7 @@ export function MoveDialog({
           <div className="p-1">
             {loading ? <Spinner className="m-4" /> : null}
             {error ? <ErrorState message={error} onRetry={reload} /> : null}
-            {data && !folders.length ? <p className="p-4 text-sm text-muted-foreground">No subfolders here.</p> : null}
+            {data && !folders.length ? <p className="p-4 text-sm text-muted-foreground">{t("No subfolders here.")}</p> : null}
             {folders.map((f) => (
               <button
                 key={f.id}
@@ -223,7 +224,7 @@ export function MoveDialog({
         </ScrollArea>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             disabled={busy || loading}
@@ -239,7 +240,7 @@ export function MoveDialog({
               }
             }}
           >
-            Move here
+            {t("Move here")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -270,7 +271,7 @@ function LinkPasswordControl({
       const r = await api<Sharing>(`/api/files/${fileId}/sharing/link/password`, { method: "PUT", body: { password: pw } });
       setPw("");
       setEditing(false);
-      toast.success("Password saved. Send it separately from the link.");
+      toast.success(t("Password saved. Send it separately from the link."));
       return r;
     });
   };
@@ -278,12 +279,12 @@ function LinkPasswordControl({
     <div className="grid gap-2 rounded-lg border p-3">
       <div className="flex items-center gap-2 text-sm">
         <KeyRound className="size-4 text-muted-foreground" aria-hidden />
-        <span className="flex-1 font-medium">{protectedNow ? "Password required to open" : "No password"}</span>
-        <Badge variant={protectedNow ? "default" : "secondary"}>{protectedNow ? "Protected" : "Open"}</Badge>
+        <span className="flex-1 font-medium">{protectedNow ? t("Password required to open") : t("No password")}</span>
+        <Badge variant={protectedNow ? "default" : "secondary"}>{protectedNow ? t("Protected") : t("Open")}</Badge>
       </div>
       {editing ? (
         <form onSubmit={save} className="grid gap-2">
-          <Label htmlFor="link-password">{protectedNow ? "New password" : "Password"}</Label>
+          <Label htmlFor="link-password">{protectedNow ? t("New password") : t("Password")}</Label>
           <div className="flex gap-2">
             <Input
               id="link-password"
@@ -295,26 +296,26 @@ function LinkPasswordControl({
               aria-describedby="link-password-help"
               autoFocus
             />
-            <Button type="button" size="icon" variant="outline" aria-label={show ? "Hide password" : "Show password"} onClick={() => setShow(!show)}>
+            <Button type="button" size="icon" variant="outline" aria-label={show ? t("Hide password") : t("Show password")} onClick={() => setShow(!show)}>
               {show ? <EyeOff /> : <Eye />}
             </Button>
           </div>
           <p id="link-password-help" className="text-xs text-muted-foreground">
-            8–128 characters. Viewers must enter it to preview or download. It cannot be shown again.
+            {t("8–128 characters. Viewers must enter it to preview or download. It cannot be shown again.")}
           </p>
           <div className="flex gap-2">
             <Button type="submit" size="sm" disabled={busy || tooShort}>
-              Save password
+              {t("Save password")}
             </Button>
             <Button type="button" size="sm" variant="ghost" onClick={() => (setEditing(false), setPw(""))}>
-              Cancel
+              {t("Cancel")}
             </Button>
           </div>
         </form>
       ) : (
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" disabled={busy} onClick={() => setEditing(true)}>
-            <KeyRound /> {protectedNow ? "Change password" : "Add password"}
+            <KeyRound /> {protectedNow ? t("Change password") : t("Add password")}
           </Button>
           {protectedNow ? (
             <Button
@@ -323,7 +324,7 @@ function LinkPasswordControl({
               disabled={busy}
               onClick={() => onChange(() => api<Sharing>(`/api/files/${fileId}/sharing/link/password`, { method: "DELETE" }))}
             >
-              Remove password
+              {t("Remove password")}
             </Button>
           ) : null}
         </div>
@@ -350,13 +351,13 @@ export function ShareDialog({ file, onClose, onChanged }: { file: FileItem | nul
   useEffect(() => {
     if (!open) return;
     const ctrl = new AbortController();
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       api<{ members: MemberLite[] }>(`/api/members?q=${encodeURIComponent(q)}`, { signal: ctrl.signal })
         .then((r) => setResults(r.members))
         .catch(() => {});
     }, 200);
     return () => {
-      clearTimeout(t);
+      clearTimeout(timer);
       ctrl.abort();
     };
   }, [q, open]);
@@ -382,9 +383,9 @@ export function ShareDialog({ file, onClose, onChanged }: { file: FileItem | nul
   const copy = async (url: string) => {
     try {
       await navigator.clipboard.writeText(url);
-      toast.success("Link copied");
+      toast.success(t("Link copied"));
     } catch {
-      toast.error("Could not copy. Select the link and copy it manually.");
+      toast.error(t("Could not copy. Select the link and copy it manually."));
     }
   };
 
@@ -392,8 +393,8 @@ export function ShareDialog({ file, onClose, onChanged }: { file: FileItem | nul
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="truncate pr-6">Share “{file?.name ?? ""}”</DialogTitle>
-          <DialogDescription>Choose who can open this file.</DialogDescription>
+          <DialogTitle className="truncate pr-6">{t("Share “")}{file?.name ?? ""}”</DialogTitle>
+          <DialogDescription>{t("Choose who can open this file.")}</DialogDescription>
         </DialogHeader>
         {loading && !data ? <Spinner /> : null}
         {error ? <ErrorState message={error} onRetry={reload} /> : null}
@@ -401,20 +402,20 @@ export function ShareDialog({ file, onClose, onChanged }: { file: FileItem | nul
           <div className="grid gap-5">
             <section aria-labelledby="people" className="grid gap-2">
               <h3 id="people" className="text-sm font-medium">
-                Members with access <span className="font-normal text-muted-foreground">(view & download)</span>
+                {t("Members with access")}{" "}<span className="font-normal text-muted-foreground">{t("(view & download)")}</span>
               </h3>
               <div className="relative">
                 <UserPlus className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
                 <Input
-                  aria-label="Add member"
-                  placeholder="Add members by name or email"
+                  aria-label={t("Add member")}
+                  placeholder={t("Add members by name or email")}
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                   className="pl-9"
                 />
               </div>
               {candidates.length ? (
-                <ul className="max-h-40 overflow-y-auto rounded-md border" aria-label="Suggestions">
+                <ul className="max-h-40 overflow-y-auto rounded-md border" aria-label={t("Suggestions")}>
                   {candidates.map((m) => (
                     <li key={m.id}>
                       <button
@@ -444,7 +445,7 @@ export function ShareDialog({ file, onClose, onChanged }: { file: FileItem | nul
                     <Button
                       size="icon"
                       variant="ghost"
-                      aria-label={`Remove ${m.email}`}
+                      aria-label={t("Remove {email}", { email: m.email })}
                       disabled={busy}
                       onClick={() => void setMembers(memberIds.filter((id) => id !== m.id))}
                     >
@@ -452,7 +453,7 @@ export function ShareDialog({ file, onClose, onChanged }: { file: FileItem | nul
                     </Button>
                   </li>
                 ))}
-                {!data.members.length ? <li className="px-1 text-sm text-muted-foreground">Not shared with any member yet.</li> : null}
+                {!data.members.length ? <li className="px-1 text-sm text-muted-foreground">{t("Not shared with any member yet.")}</li> : null}
               </ul>
             </section>
 
@@ -460,7 +461,7 @@ export function ShareDialog({ file, onClose, onChanged }: { file: FileItem | nul
 
             <section aria-labelledby="general-access" className="grid gap-3">
               <h3 id="general-access" className="text-sm font-medium">
-                General access
+                {t("General access")}
               </h3>
               <div className="flex items-start gap-3">
                 <span
@@ -474,39 +475,39 @@ export function ShareDialog({ file, onClose, onChanged }: { file: FileItem | nul
                 </span>
                 <div className="grid min-w-0 flex-1 gap-1">
                   <Select value={data.visibility} onValueChange={(v) => void setAccess(v)} disabled={busy}>
-                    <SelectTrigger aria-label="General access" className="w-full sm:w-64">
+                    <SelectTrigger aria-label={t("General access")} className="w-full sm:w-64">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="private">Restricted</SelectItem>
+                      <SelectItem value="private">{t("Restricted")}</SelectItem>
                       <SelectItem value="public" disabled={data.policy?.publicLinksEnabled === false}>
-                        Anyone with the link
+                        {t("Anyone with the link")}
                       </SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
                     {data.visibility === "public"
-                      ? "Anyone with the link can view and download without signing in."
-                      : "Only you and the members above can open this file."}
+                      ? t("Anyone with the link can view and download without signing in.")
+                      : t("Only you and the members above can open this file.")}
                   </p>
                 </div>
               </div>
               {data.policy?.publicLinksEnabled === false ? (
                 <p role="note" className="text-xs text-muted-foreground">
-                  Public links are turned off by an Admin.
+                  {t("Public links are turned off by an Admin.")}
                 </p>
               ) : null}
               {data.publicLink && data.policy?.requirePassword && !data.publicLink.passwordProtected ? (
                 <p role="alert" className="rounded-md border border-warning/50 bg-warning/15 p-2 text-xs">
-                  Your organization requires a password on public links. This link won’t open until you add one.
+                  {t("Your organization requires a password on public links. This link won’t open until you add one.")}
                 </p>
               ) : null}
               {data.publicLink ? (
                 <>
                   <div className="flex gap-2">
-                    <Input readOnly value={data.publicLink.url} aria-label="Public link" onFocus={(e) => e.currentTarget.select()} className="text-xs" />
-                    <Button variant="outline" aria-label="Copy link" onClick={() => void copy(data.publicLink!.url)}>
-                      <Copy /> Copy
+                    <Input readOnly value={data.publicLink.url} aria-label={t("Public link")} onFocus={(e) => e.currentTarget.select()} className="text-xs" />
+                    <Button variant="outline" aria-label={t("Copy link")} onClick={() => void copy(data.publicLink!.url)}>
+                      <Copy />{" "}{t("Copy")}
                     </Button>
                   </div>
                   <LinkPasswordControl fileId={file!.id} protectedNow={data.publicLink.passwordProtected} busy={busy} onChange={(fn) => void mutate(fn)} />
@@ -516,7 +517,7 @@ export function ShareDialog({ file, onClose, onChanged }: { file: FileItem | nul
           </div>
         ) : null}
         <DialogFooter>
-          <Button onClick={onClose}>Done</Button>
+          <Button onClick={onClose}>{t("Done")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -526,12 +527,12 @@ export function ShareDialog({ file, onClose, onChanged }: { file: FileItem | nul
 /** Preview streams from /api/files/:id/preview (same origin only). */
 export function PreviewDialog({ file, onClose }: { file: FileItem | null; onClose: () => void }) {
   const src = file ? `/api/files/${file.id}/preview` : "";
-  const t = file?.contentType ?? "";
-  let body = <p className="p-6 text-sm text-muted-foreground">Preview is not available for this file type. Download it to open.</p>;
+  const ct = file?.contentType ?? "";
+  let body = <p className="p-6 text-sm text-muted-foreground">{t("Preview is not available for this file type. Download it to open.")}</p>;
   if (file?.inline) {
-    if (t.startsWith("image/")) body = <img src={src} alt={file.name} className="mx-auto max-h-[70dvh] max-w-full object-contain" />;
-    else if (t.startsWith("video/")) body = <video src={src} controls playsInline preload="metadata" className="mx-auto max-h-[70dvh] max-w-full" />;
-    else if (t.startsWith("audio/")) body = <audio src={src} controls preload="metadata" className="m-6 w-[calc(100%-3rem)]" />;
+    if (ct.startsWith("image/")) body = <img src={src} alt={file.name} className="mx-auto max-h-[70dvh] max-w-full object-contain" />;
+    else if (ct.startsWith("video/")) body = <video src={src} controls playsInline preload="metadata" className="mx-auto max-h-[70dvh] max-w-full" />;
+    else if (ct.startsWith("audio/")) body = <audio src={src} controls preload="metadata" className="m-6 w-[calc(100%-3rem)]" />;
     else body = <iframe src={src} title={file.name} className="h-[70dvh] w-full border-0 bg-white" />;
   }
   return (
@@ -545,10 +546,10 @@ export function PreviewDialog({ file, onClose }: { file: FileItem | null; onClos
         <DialogFooter>
           <Button asChild variant="outline">
             <a href={file ? `/api/files/${file.id}/download` : "#"}>
-              <Download /> Download
+              <Download />{" "}{t("Download")}
             </a>
           </Button>
-          <Button onClick={onClose}>Close</Button>
+          <Button onClick={onClose}>{t("Close")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

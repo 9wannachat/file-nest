@@ -15,11 +15,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { api, errorMessage } from "@/lib/api";
 import { useApi, useDebounced } from "@/lib/hooks";
 import { formatBytes, formatDate } from "@/lib/utils";
+import { t } from "@/i18n";
 
 export function statusBadge(m: Pick<AdminMember, "status" | "bannedReason">) {
-  if (m.status === "disabled") return <Badge variant="destructive">{m.bannedReason ? "Banned" : "Disabled"}</Badge>;
-  if (m.status === "invited") return <Badge variant="outline">Invited</Badge>;
-  return <Badge variant="secondary">Active</Badge>;
+  if (m.status === "disabled") return <Badge variant="destructive">{m.bannedReason ? t("Banned") : t("Disabled")}</Badge>;
+  if (m.status === "invited") return <Badge variant="outline">{t("Invited")}</Badge>;
+  return <Badge variant="secondary">{t("Active")}</Badge>;
 }
 
 export function MembersPage() {
@@ -36,7 +37,7 @@ export function MembersPage() {
     e.preventDefault();
     try {
       await api("/api/admin/members", { method: "POST", body: { email } });
-      toast.success(`${email} can now sign in with Google or GitHub`);
+      toast.success(t("{email} can now sign in with Google or GitHub", { email }));
       setEmail("");
       void reload();
     } catch (err) {
@@ -49,32 +50,32 @@ export function MembersPage() {
       <div className="flex flex-wrap items-end gap-2">
         <div className="relative min-w-56 flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input aria-label="Search members" placeholder="Search name or email" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
+          <Input aria-label={t("Search members")} placeholder={t("Search name or email")} value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
         </div>
         <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger aria-label="Filter by status" className="w-36">
+          <SelectTrigger aria-label={t("Filter by status")} className="w-36">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="invited">Invited</SelectItem>
-            <SelectItem value="disabled">Disabled / banned</SelectItem>
+            <SelectItem value="all">{t("All statuses")}</SelectItem>
+            <SelectItem value="active">{t("Active")}</SelectItem>
+            <SelectItem value="invited">{t("Invited")}</SelectItem>
+            <SelectItem value="disabled">{t("Disabled / banned")}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={role} onValueChange={setRole}>
-          <SelectTrigger aria-label="Filter by role" className="w-32">
+          <SelectTrigger aria-label={t("Filter by role")} className="w-32">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All roles</SelectItem>
-            <SelectItem value="admin">Admins</SelectItem>
-            <SelectItem value="member">Members</SelectItem>
+            <SelectItem value="all">{t("All roles")}</SelectItem>
+            <SelectItem value="admin">{t("Admins")}</SelectItem>
+            <SelectItem value="member">{t("Members")}</SelectItem>
           </SelectContent>
         </Select>
         <Button asChild>
           <Link to="/admin/invitations">
-            <UserPlus /> Invite
+            <UserPlus />{" "}{t("Invite")}
           </Link>
         </Button>
       </div>
@@ -86,10 +87,10 @@ export function MembersPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Member</TableHead>
-                <TableHead className="hidden md:table-cell">Sign-in</TableHead>
-                <TableHead className="hidden lg:table-cell">Storage</TableHead>
-                <TableHead className="hidden lg:table-cell">Last sign-in</TableHead>
+                <TableHead>{t("Member")}</TableHead>
+                <TableHead className="hidden md:table-cell">{t("Sign-in")}</TableHead>
+                <TableHead className="hidden lg:table-cell">{t("Storage")}</TableHead>
+                <TableHead className="hidden lg:table-cell">{t("Last sign-in")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -104,7 +105,7 @@ export function MembersPage() {
                         <span className="flex items-center gap-2">
                           <span className="truncate font-medium">{m.name ?? m.email}</span>
                           {statusBadge(m)}
-                          {m.role === "admin" ? <Badge>Admin</Badge> : null}
+                          {m.role === "admin" ? <Badge>{t("Admin")}</Badge> : null}
                         </span>
                         <span className="block truncate text-xs text-muted-foreground">{m.email}</span>
                       </span>
@@ -117,10 +118,10 @@ export function MembersPage() {
                           {PROVIDER_LABELS[p]}
                         </Badge>
                       ))}
-                      {m.hasPassword ? <Badge variant="outline">Password</Badge> : null}
+                      {m.hasPassword ? <Badge variant="outline">{t("Password")}</Badge> : null}
                       {m.mfaEnabled ? (
                         <Badge variant="secondary">
-                          <ShieldCheck /> 2FA
+                          <ShieldCheck />{" "}{t("2FA")}
                         </Badge>
                       ) : null}
                     </span>
@@ -128,13 +129,13 @@ export function MembersPage() {
                   <TableCell className="hidden text-muted-foreground lg:table-cell">
                     {formatBytes(m.usedBytes)} / {m.quotaUnlimited ? "∞" : formatBytes(m.quotaBytes)}
                   </TableCell>
-                  <TableCell className="hidden text-muted-foreground lg:table-cell">{m.lastLoginAt ? formatDate(m.lastLoginAt) : "Never"}</TableCell>
+                  <TableCell className="hidden text-muted-foreground lg:table-cell">{m.lastLoginAt ? formatDate(m.lastLoginAt) : t("Never")}</TableCell>
                 </TableRow>
               ))}
               {!data.members.length ? (
                 <TableRow>
                   <TableCell colSpan={4} className="text-muted-foreground">
-                    No members match.
+                    {t("No members match.")}
                   </TableCell>
                 </TableRow>
               ) : null}
@@ -145,17 +146,17 @@ export function MembersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Allow an email address</CardTitle>
-          <CardDescription>Adds an email to the allowlist so it can sign in with Google or GitHub (verified email). For Microsoft or a password, use an invitation link bound to the email.</CardDescription>
+          <CardTitle>{t("Allow an email address")}</CardTitle>
+          <CardDescription>{t("Adds an email to the allowlist so it can sign in with Google or GitHub (verified email). For Microsoft or a password, use an invitation link bound to the email.")}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={preInvite} className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <div className="grid flex-1 gap-2">
-              <Label htmlFor="allow-email">Email</Label>
+              <Label htmlFor="allow-email">{t("Email")}</Label>
               <Input id="allow-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" />
             </div>
             <Button type="submit" variant="outline">
-              Add
+              {t("Add")}
             </Button>
           </form>
         </CardContent>

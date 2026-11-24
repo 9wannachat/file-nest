@@ -2,6 +2,7 @@ import { AlertTriangle, HardDrive } from "lucide-react";
 import { Link } from "react-router";
 import type { Me } from "@shared/types";
 import { cn, formatBytes } from "@/lib/utils";
+import { t } from "@/i18n";
 
 export type QuotaLevel = "ok" | "warn" | "critical";
 
@@ -21,12 +22,12 @@ export function QuotaBar({ user, className }: { user: Me["user"]; className?: st
   return (
     <div className={cn("grid gap-1.5", className)}>
       <div className="flex items-center gap-2 text-xs opacity-80">
-        <HardDrive className="size-3.5" aria-hidden /> Storage
+        <HardDrive className="size-3.5" aria-hidden />{" "}{t("Storage")}
       </div>
       {q.unlimited ? null : (
         <div
           role="meter"
-          aria-label="Storage used"
+          aria-label={t("Storage used")}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(usedPct)}
@@ -45,8 +46,8 @@ export function QuotaBar({ user, className }: { user: Me["user"]; className?: st
         </div>
       )}
       <p className="text-xs opacity-75">
-        {q.unlimited ? `${formatBytes(user.usedBytes)} used · no limit` : `${formatBytes(user.usedBytes)} of ${formatBytes(user.quotaBytes)} used`}
-        {q.trashed > 0 ? ` · ${formatBytes(q.trashed)} in trash` : ""}
+        {q.unlimited ? t("{usedBytes} used · no limit", { usedBytes: formatBytes(user.usedBytes) }) : t("{used} of {quota} used", { used: formatBytes(user.usedBytes), quota: formatBytes(user.quotaBytes) })}
+        {q.trashed > 0 ? t(" · {trashed} in trash", { trashed: formatBytes(q.trashed) }) : ""}
       </p>
     </div>
   );
@@ -67,12 +68,12 @@ export function QuotaBanner({ user }: { user: Me["user"] }) {
     >
       <AlertTriangle className={cn("size-4 shrink-0", q.level === "critical" ? "text-destructive" : "text-warning")} aria-hidden />
       <span className="flex-1">
-        {full ? "Your storage is full. New uploads are blocked." : `You’ve used ${Math.round(q.pct)}% of your storage.`}{" "}
-        {q.trashed > 0 ? `Emptying the trash frees ${formatBytes(q.trashed)}.` : "Delete files you no longer need, or ask an Admin for more space."}
+        {full ? t("Your storage is full. New uploads are blocked.") : t("You’ve used {pct}% of your storage.", { pct: Math.round(q.pct) })}{" "}
+        {q.trashed > 0 ? t("Emptying the trash frees {trashed}.", { trashed: formatBytes(q.trashed) }) : t("Delete files you no longer need, or ask an Admin for more space.")}
       </span>
       {q.trashed > 0 ? (
         <Link to="/trash" className="font-medium underline underline-offset-2">
-          Open trash
+          {t("Open trash")}
         </Link>
       ) : null}
     </div>
