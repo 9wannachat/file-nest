@@ -3,8 +3,9 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { t } from "@/i18n";
 
-export function Spinner({ className, label = "Loading" }: { className?: string; label?: string }) {
+export function Spinner({ className, label = t("Loading") }: { className?: string; label?: string }) {
   return (
     <span role="status" className={cn("inline-flex items-center gap-2 text-muted-foreground", className)}>
       <Loader2 className="size-5 animate-spin" aria-hidden />
@@ -33,7 +34,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
       <span className="flex-1">{message}</span>
       {onRetry ? (
         <Button variant="outline" size="sm" onClick={onRetry}>
-          Try again
+          {t("Try again")}
         </Button>
       ) : null}
     </div>
@@ -42,7 +43,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
 
 export function ListSkeleton({ rows = 6 }: { rows?: number }) {
   return (
-    <div className="space-y-3 p-4 sm:px-6" aria-busy="true" aria-label="Loading files">
+    <div className="space-y-3 p-4 sm:px-6" aria-busy="true" aria-label={t("Loading files")}>
       {Array.from({ length: rows }).map((_, i) => (
         <div key={i} className="flex items-center gap-3">
           <Skeleton className="size-5 rounded" />

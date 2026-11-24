@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { SortKey, SortState, ViewMode } from "./FileList";
+import { t } from "@/i18n";
 
 const LIST_PARAMS = ["view", "sort", "dir"] as const;
 
@@ -42,11 +43,11 @@ export function useListView(defaultSort: SortState = { key: "name", dir: "asc" }
 
 export function ViewToggle({ view, setView }: { view: ViewMode; setView: (v: ViewMode) => void }) {
   return (
-    <div className="flex rounded-md border p-0.5" role="group" aria-label="View">
+    <div className="flex rounded-md border p-0.5" role="group" aria-label={t("View")}>
       {(
         [
-          ["list", List, "List view"],
-          ["grid", LayoutGrid, "Grid view"],
+          ["list", List, t("List view")],
+          ["grid", LayoutGrid, t("Grid view")],
         ] as const
       ).map(([v, Icon, label]) => (
         <Tooltip key={v}>

@@ -14,14 +14,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { api, errorMessage } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import { formatDate } from "@/lib/utils";
+import { t, type MessageKey } from "@/i18n";
 
 const copy = (url: string) =>
   navigator.clipboard.writeText(url).then(
-    () => toast.success("Invitation link copied"),
-    () => toast.error("Could not copy"),
+    () => toast.success(t("Invitation link copied")),
+    () => toast.error(t("Could not copy")),
   );
 
-const STATE: Record<InvitationInfo["state"], { label: string; variant: "secondary" | "outline" | "destructive" }> = {
+const STATE: Record<InvitationInfo["state"], { label: MessageKey; variant: "secondary" | "outline" | "destructive" }> = {
   active: { label: "Active", variant: "secondary" },
   used_up: { label: "Used", variant: "outline" },
   expired: { label: "Expired", variant: "outline" },
@@ -67,33 +68,32 @@ export function InvitationsPage() {
     <div className="grid gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>Create an invitation link</CardTitle>
+          <CardTitle>{t("Create an invitation link")}</CardTitle>
           <CardDescription>
-            Links bound to an email can be used with Google or a password for that address. Open links (no email) accept Google sign-in only. Links are
-            secret: share them only with the people you invite.
+            {t("Links bound to an email can be used with Google or a password for that address. Open links (no email) accept Google sign-in only. Links are secret: share them only with the people you invite.")}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={create} className="grid gap-4">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="grid gap-2 sm:col-span-2">
-                <Label htmlFor="inv-email">Email (optional — limits the link to this address)</Label>
-                <Input id="inv-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="anyone with the link" />
+                <Label htmlFor="inv-email">{t("Email (optional — limits the link to this address)")}</Label>
+                <Input id="inv-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={t("anyone with the link")} />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="inv-role">Role</Label>
+                <Label htmlFor="inv-role">{t("Role")}</Label>
                 <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
                   <SelectTrigger id="inv-role" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="member">Member</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="member">{t("Member")}</SelectItem>
+                    <SelectItem value="admin">{t("Admin")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="inv-days">Expires</Label>
+                <Label htmlFor="inv-days">{t("Expires")}</Label>
                 <Select value={form.days} onValueChange={(v) => setForm({ ...form, days: v })}>
                   <SelectTrigger id="inv-days" className="w-full">
                     <SelectValue />
@@ -101,14 +101,14 @@ export function InvitationsPage() {
                   <SelectContent>
                     {[1, 3, 7, 14, 30, 90].map((d) => (
                       <SelectItem key={d} value={String(d)}>
-                        {d} day{d > 1 ? "s" : ""}
+                        {d}{" "}{t("day")}{d > 1 ? "s" : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="inv-uses">Uses</Label>
+                <Label htmlFor="inv-uses">{t("Uses")}</Label>
                 <Select value={form.email.trim() ? "1" : form.maxUses} disabled={!!form.email.trim()} onValueChange={(v) => setForm({ ...form, maxUses: v })}>
                   <SelectTrigger id="inv-uses" className="w-full">
                     <SelectValue />
@@ -123,23 +123,23 @@ export function InvitationsPage() {
                 </Select>
               </div>
               <div className="grid gap-2 sm:col-span-2 lg:col-span-3">
-                <Label htmlFor="inv-note">Note (optional)</Label>
-                <Input id="inv-note" maxLength={200} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="e.g. Design team" />
+                <Label htmlFor="inv-note">{t("Note (optional)")}</Label>
+                <Input id="inv-note" maxLength={200} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder={t("e.g. Design team")} />
               </div>
             </div>
             <div>
               <Button type="submit" disabled={busy}>
-                <Link2 /> Create link
+                <Link2 />{" "}{t("Create link")}
               </Button>
             </div>
           </form>
           {created?.url ? (
             <div role="status" className="mt-4 grid gap-2 rounded-lg border border-primary/40 bg-primary/10 p-3">
-              <Label htmlFor="inv-created">New invitation link</Label>
+              <Label htmlFor="inv-created">{t("New invitation link")}</Label>
               <div className="flex gap-2">
                 <Input id="inv-created" readOnly value={created.url} onFocus={(e) => e.currentTarget.select()} className="text-xs" />
                 <Button variant="outline" onClick={() => void copy(created.url!)}>
-                  <Copy /> Copy
+                  <Copy />{" "}{t("Copy")}
                 </Button>
               </div>
             </div>
@@ -151,7 +151,7 @@ export function InvitationsPage() {
       {loading && !data ? <Spinner /> : null}
       {data && !data.revealed && data.invitations.some((i) => i.state === "active") ? (
         <div role="status" className="flex flex-wrap items-center gap-3 rounded-lg border p-3 text-sm">
-          <span className="flex-1">Invitation links are hidden until you confirm it’s you.</span>
+          <span className="flex-1">{t("Invitation links are hidden until you confirm it’s you.")}</span>
           <Button
             size="sm"
             variant="outline"
@@ -163,7 +163,7 @@ export function InvitationsPage() {
               }
             }}
           >
-            Show links
+            {t("Show links")}
           </Button>
         </div>
       ) : null}
@@ -172,12 +172,12 @@ export function InvitationsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Invitation</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="hidden md:table-cell">Used</TableHead>
-                <TableHead className="hidden md:table-cell">Expires</TableHead>
+                <TableHead>{t("Invitation")}</TableHead>
+                <TableHead>{t("Status")}</TableHead>
+                <TableHead className="hidden md:table-cell">{t("Used")}</TableHead>
+                <TableHead className="hidden md:table-cell">{t("Expires")}</TableHead>
                 <TableHead className="text-right">
-                  <span className="sr-only">Actions</span>
+                  <span className="sr-only">{t("Actions")}</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -185,14 +185,14 @@ export function InvitationsPage() {
               {data.invitations.map((i) => (
                 <TableRow key={i.id}>
                   <TableCell className="max-w-64">
-                    <div className="truncate font-medium">{i.email ?? "Anyone with the link"}</div>
+                    <div className="truncate font-medium">{i.email ?? t("Anyone with the link")}</div>
                     <div className="truncate text-xs text-muted-foreground">
-                      {i.role === "admin" ? "Admin" : "Member"}
+                      {i.role === "admin" ? t("Admin") : t("Member")}
                       {i.note ? ` · ${i.note}` : ""}
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={STATE[i.state].variant}>{STATE[i.state].label}</Badge>
+                    <Badge variant={STATE[i.state].variant}>{t(STATE[i.state].label)}</Badge>
                   </TableCell>
                   <TableCell className="hidden text-muted-foreground md:table-cell">
                     {i.useCount}/{i.maxUses}
@@ -202,18 +202,18 @@ export function InvitationsPage() {
                     {i.state === "active" ? (
                       <span className="inline-flex gap-1">
                         {i.url ? (
-                          <Button size="icon-sm" variant="ghost" aria-label="Copy invitation link" onClick={() => void copy(i.url!)}>
+                          <Button size="icon-sm" variant="ghost" aria-label={t("Copy invitation link")} onClick={() => void copy(i.url!)}>
                             <Copy />
                           </Button>
                         ) : null}
                         <Button
                           size="icon-sm"
                           variant="ghost"
-                          aria-label="Revoke invitation"
+                          aria-label={t("Revoke invitation")}
                           onClick={async () => {
                             try {
                               await api(`/api/admin/invitations/${i.id}`, { method: "DELETE" });
-                              toast.success("Invitation revoked");
+                              toast.success(t("Invitation revoked"));
                               void reload();
                             } catch (e) {
                               toast.error(errorMessage(e));
@@ -230,7 +230,7 @@ export function InvitationsPage() {
               {!data.invitations.length ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-muted-foreground">
-                    No invitations yet.
+                    {t("No invitations yet.")}
                   </TableCell>
                 </TableRow>
               ) : null}

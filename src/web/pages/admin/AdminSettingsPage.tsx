@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { api, errorMessage } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import { formatBytes } from "@/lib/utils";
+import { t } from "@/i18n";
 
 const MB = 1024 ** 2;
 const GB = 1024 ** 3;
@@ -69,7 +70,7 @@ export function AdminSettingsPage() {
       const patch = Object.fromEntries(changed.map((k) => [k, s[k]]));
       const r = await run(() => api<{ settings: SystemSettings }>("/api/admin/settings", { method: "PUT", body: patch }));
       if (r) {
-        toast.success("Settings saved");
+        toast.success(t("Settings saved"));
         void reload();
       }
     } catch (e) {
@@ -83,34 +84,34 @@ export function AdminSettingsPage() {
     <div className="grid gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>Sign-in & registration</CardTitle>
-          <CardDescription>At least one sign-in method must stay on.</CardDescription>
+          <CardTitle>{t("Sign-in & registration")}</CardTitle>
+          <CardDescription>{t("At least one sign-in method must stay on.")}</CardDescription>
         </CardHeader>
         <CardContent className="divide-y">
-          <Row id="s-reg" label="Registration" hint="Invitation links let new people create accounts. Closed stops all new sign-ups.">
-            <Choice id="s-reg" value={s.registrationMode} options={[["invite", "Invitation links"], ["closed", "Closed"]]} onChange={(v) => set("registrationMode", v)} />
+          <Row id="s-reg" label={t("Registration")} hint={t("Invitation links let new people create accounts. Closed stops all new sign-ups.")}>
+            <Choice id="s-reg" value={s.registrationMode} options={[["invite", t("Invitation links")], ["closed", t("Closed")]]} onChange={(v) => set("registrationMode", v)} />
           </Row>
-          <Row id="s-google" label="Sign in with Google">
+          <Row id="s-google" label={t("Sign in with Google")}>
             <Switch id="s-google" checked={s.googleEnabled} onCheckedChange={(v) => set("googleEnabled", v)} />
           </Row>
-          <Row id="s-pw" label="Sign in with email and password">
+          <Row id="s-pw" label={t("Sign in with email and password")}>
             <Switch id="s-pw" checked={s.passwordEnabled} onCheckedChange={(v) => set("passwordEnabled", v)} />
           </Row>
-          <Row id="s-mfa" label="Require two-factor authentication" hint="Members who must use 2FA are asked to set it up at their next sign-in.">
-            <Choice id="s-mfa" value={s.mfaPolicy} options={[["optional", "Optional"], ["admins", "Admins"], ["all", "Everyone"]]} onChange={(v) => set("mfaPolicy", v)} />
+          <Row id="s-mfa" label={t("Require two-factor authentication")} hint={t("Members who must use 2FA are asked to set it up at their next sign-in.")}>
+            <Choice id="s-mfa" value={s.mfaPolicy} options={[["optional", t("Optional")], ["admins", t("Admins")], ["all", t("Everyone")]]} onChange={(v) => set("mfaPolicy", v)} />
           </Row>
-          <Row id="s-ttl" label="Stay signed in for" hint="Applies to new sign-ins.">
-            <Choice id="s-ttl" value={s.sessionTtlDays} options={[[1, "1 day"], [7, "7 days"], [14, "14 days"], [30, "30 days"]]} onChange={(v) => set("sessionTtlDays", v)} />
+          <Row id="s-ttl" label={t("Stay signed in for")} hint={t("Applies to new sign-ins.")}>
+            <Choice id="s-ttl" value={s.sessionTtlDays} options={[[1, t("1 day")], [7, t("7 days")], [14, t("14 days")], [30, t("30 days")]]} onChange={(v) => set("sessionTtlDays", v)} />
           </Row>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Files & sharing</CardTitle>
+          <CardTitle>{t("Files & sharing")}</CardTitle>
         </CardHeader>
         <CardContent className="divide-y">
-          <Row id="s-quota" label="Default quota for new members">
+          <Row id="s-quota" label={t("Default quota for new members")}>
             <Choice
               id="s-quota"
               value={s.defaultQuotaBytes}
@@ -118,16 +119,16 @@ export function AdminSettingsPage() {
               onChange={(v) => set("defaultQuotaBytes", v)}
             />
           </Row>
-          <Row id="s-max" label="Maximum file size" hint={`Up to ${formatBytes(cap)} (set at deploy time).`}>
+          <Row id="s-max" label={t("Maximum file size")} hint={t("Up to {cap} (set at deploy time).", { cap: formatBytes(cap) })}>
             <Choice id="s-max" value={s.maxUploadBytes} options={uploadOptions.map((v) => [v, formatBytes(v)] as [number, string])} onChange={(v) => set("maxUploadBytes", v)} />
           </Row>
-          <Row id="s-trash" label="Delete trash after">
-            <Choice id="s-trash" value={s.trashRetentionDays} options={[[7, "7 days"], [30, "30 days"], [90, "90 days"], [365, "1 year"]]} onChange={(v) => set("trashRetentionDays", v)} />
+          <Row id="s-trash" label={t("Delete trash after")}>
+            <Choice id="s-trash" value={s.trashRetentionDays} options={[[7, t("7 days")], [30, t("30 days")], [90, t("90 days")], [365, t("1 year")]]} onChange={(v) => set("trashRetentionDays", v)} />
           </Row>
-          <Row id="s-links" label="Allow public links" hint="Turning this off takes all public links offline immediately.">
+          <Row id="s-links" label={t("Allow public links")} hint={t("Turning this off takes all public links offline immediately.")}>
             <Switch id="s-links" checked={s.publicLinksEnabled} onCheckedChange={(v) => set("publicLinksEnabled", v)} />
           </Row>
-          <Row id="s-linkpw" label="Require a password on public links" hint="Links without a password stop working until the owner adds one.">
+          <Row id="s-linkpw" label={t("Require a password on public links")} hint={t("Links without a password stop working until the owner adds one.")}>
             <Switch id="s-linkpw" checked={s.publicLinksRequirePassword} onCheckedChange={(v) => set("publicLinksRequirePassword", v)} />
           </Row>
         </CardContent>
@@ -135,13 +136,13 @@ export function AdminSettingsPage() {
 
       <div className="sticky bottom-4 flex items-center justify-end gap-3 rounded-lg border bg-card p-3 shadow-sm">
         <span className="mr-auto text-sm text-muted-foreground" aria-live="polite">
-          {changed.length ? `${changed.length} unsaved change${changed.length > 1 ? "s" : ""}` : "All changes saved"}
+          {changed.length ? t(changed.length > 1 ? "{n} unsaved changes" : "{n} unsaved change", { n: changed.length }) : t("All changes saved")}
         </span>
         <Button variant="ghost" disabled={!changed.length || busy} onClick={() => setS(data.settings)}>
-          Discard
+          {t("Discard")}
         </Button>
         <Button disabled={!changed.length || busy} onClick={() => void save()}>
-          <Save /> Save settings
+          <Save />{" "}{t("Save settings")}
         </Button>
       </div>
     </div>

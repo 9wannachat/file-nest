@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { FileItem, UploadTicket } from "@shared/types";
 import { api, ApiError, errorMessage } from "@/lib/api";
+import { t } from "@/i18n";
 
 export type UploadState = "queued" | "uploading" | "finalizing" | "done" | "error" | "canceled";
 
@@ -35,10 +36,10 @@ function putWithProgress(url: string, headers: Record<string, string>, file: Fil
     xhr.open("PUT", url);
     for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
-    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed (HTTP ${xhr.status})`)));
+    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(t("Upload failed (HTTP {status})", { status: xhr.status }))));
     xhr.onerror = () =>
-      reject(new Error(navigator.onLine ? "Upload failed. Check storage CORS settings or your connection." : "Connection lost during upload."));
-    xhr.onabort = () => reject(new DOMException("Aborted", "AbortError"));
+      reject(new Error(navigator.onLine ? t("Upload failed. Check storage CORS settings or your connection.") : t("Connection lost during upload.")));
+    xhr.onabort = () => reject(new DOMException(t("Aborted"), "AbortError"));
     signal.addEventListener("abort", () => xhr.abort(), { once: true });
     xhr.send(file);
   });
@@ -69,7 +70,7 @@ export function UploadProvider({
       running.current.add(item.key);
       let uploadId: string | undefined;
       try {
-        if (item.file.size > maxBytes) throw new ApiError(413, "file_too_large", "File is larger than the upload limit");
+        if (item.file.size > maxBytes) throw new ApiError(413, "file_too_large", t("File is larger than the upload limit"));
         patch(item.key, { state: "uploading", progress: 0, error: undefined });
         const ticket = await api<UploadTicket>("/api/uploads", {
           method: "POST",
@@ -99,7 +100,7 @@ export function UploadProvider({
           }
           await sleep(1000);
         }
-        throw new Error("Finalizing took too long. Try again.");
+        throw new Error(t("Finalizing took too long. Try again."));
       } catch (e) {
         if ((e as Error).name === "AbortError") {
           patch(item.key, { state: "canceled" });
@@ -137,7 +138,7 @@ export function UploadProvider({
             folderId,
             progress: 0,
             state: fits ? "queued" : "error",
-            error: fits ? undefined : "Not enough storage left for this file",
+            error: fits ? undefined : t("Not enough storage left for this file"),
           };
         });
         return [...cur, ...list];

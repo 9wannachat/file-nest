@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Me } from "@shared/types";
 import { api, ApiError, setCsrfToken, UNAUTHENTICATED_EVENT } from "@/lib/api";
+import { t } from "@/i18n";
 
 type AuthState = { status: "loading" } | { status: "anon" } | { status: "error"; message: string } | { status: "ready"; me: Me };
 
@@ -29,7 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .catch((e) => {
         if (e instanceof ApiError && e.status === 401) setState({ status: "anon" });
-        else setState({ status: "error", message: e instanceof Error ? e.message : "Failed to load" });
+        else setState({ status: "error", message: e instanceof Error ? e.message : t("Failed to load") });
       });
   }, []);
 

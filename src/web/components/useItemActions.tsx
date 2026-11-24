@@ -9,6 +9,7 @@ import { itemKey, type ItemAction } from "./FileList";
 import { withListParams } from "./listControls";
 import { USAGE_CHANGED_EVENT } from "@/auth";
 import { ConfirmDialog, MoveDialog, NameDialog, PreviewDialog, ShareDialog } from "./dialogs";
+import { t } from "@/i18n";
 
 export type ListMode = "drive" | "shared" | "trash" | "search";
 
@@ -55,8 +56,8 @@ async function runAll(items: DriveItem[], fn: (i: DriveItem) => Promise<unknown>
   const results = await settleLimited(withoutCoveredChildren(items), fn);
   const failed = results.filter((r) => r.status === "rejected") as PromiseRejectedResult[];
   const ok = results.length - failed.length;
-  if (ok) toast.success(`${verb} ${ok} item${ok > 1 ? "s" : ""}`);
-  if (failed.length) toast.error(`${failed.length} item(s) failed: ${errorMessage(failed[0]!.reason)}`);
+  if (ok) toast.success(t(ok > 1 ? "{verb} {n} items" : "{verb} {n} item", { verb, n: ok }));
+  if (failed.length) toast.error(t("{n} item(s) failed: {error}", { n: failed.length, error: errorMessage(failed[0]!.reason) }));
 }
 
 /**
@@ -85,7 +86,7 @@ export function useItemActions(mode: ListMode, reload: () => void, items: DriveI
   };
   useEffect(() => {
     if (previewParam && loaded && !fromParam) {
-      toast.error("That file isn’t in this list any more.");
+      toast.error(t("That file isn’t in this list any more."));
       dropPreviewParam();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,27 +126,27 @@ export function useItemActions(mode: ListMode, reload: () => void, items: DriveI
   const actionsFor = (item: DriveItem): ItemAction[] => {
     if (mode === "trash") {
       return [
-        { id: "restore", label: "Restore", icon: <RotateCcw />, onSelect: () => void act(() => api(`${path(item)}/restore`, { method: "POST" }), `Restored “${item.name}”`) },
-        { id: "purge", label: "Delete forever", icon: <XCircle />, destructive: true, separatorBefore: true, onSelect: () => setPurge([item]) },
+        { id: "restore", label: t("Restore"), icon: <RotateCcw />, onSelect: () => void act(() => api(`${path(item)}/restore`, { method: "POST" }), t("Restored “{name}”", { name: item.name })) },
+        { id: "purge", label: t("Delete forever"), icon: <XCircle />, destructive: true, separatorBefore: true, onSelect: () => setPurge([item]) },
       ];
     }
     const list: ItemAction[] = [];
     if (item.kind === "file") {
-      list.push({ id: "preview", label: "Preview", icon: <Eye />, onSelect: () => setPreview(item) });
-      list.push({ id: "download", label: "Download", icon: <Download />, onSelect: () => download(item) });
-      if (owned(item)) list.push({ id: "share", label: "Share", icon: <Share2 />, onSelect: () => setShare(item) });
+      list.push({ id: "preview", label: t("Preview"), icon: <Eye />, onSelect: () => setPreview(item) });
+      list.push({ id: "download", label: t("Download"), icon: <Download />, onSelect: () => download(item) });
+      if (owned(item)) list.push({ id: "share", label: t("Share"), icon: <Share2 />, onSelect: () => setShare(item) });
     }
     if (owned(item)) {
-      list.push({ id: "rename", label: "Rename", icon: <Pencil />, shortcut: "F2", onSelect: () => setRename(item), separatorBefore: item.kind === "file" });
-      list.push({ id: "move", label: "Move to…", icon: <FolderInput />, onSelect: () => setMove([item]) });
+      list.push({ id: "rename", label: t("Rename"), icon: <Pencil />, shortcut: "F2", onSelect: () => setRename(item), separatorBefore: item.kind === "file" });
+      list.push({ id: "move", label: t("Move to…"), icon: <FolderInput />, onSelect: () => setMove([item]) });
       list.push({
         id: "trash",
-        label: "Move to trash",
+        label: t("Move to trash"),
         icon: <Trash2 />,
         destructive: true,
         separatorBefore: true,
         shortcut: "Del",
-        onSelect: () => void act(() => api(`${path(item)}/trash`, { method: "POST" }), `Moved “${item.name}” to trash`),
+        onSelect: () => void act(() => api(`${path(item)}/trash`, { method: "POST" }), t("Moved “{name}” to trash", { name: item.name })),
       });
     }
     return list;
@@ -169,35 +170,35 @@ export function useItemActions(mode: ListMode, reload: () => void, items: DriveI
     canSelect && selectedItems.length ? (
       <div
         role="toolbar"
-        aria-label="Selection actions"
+        aria-label={t("Selection actions")}
         className="sticky top-0 z-10 mx-2 mb-2 flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-2 shadow-sm sm:mx-4"
       >
-        <Button size="icon" variant="ghost" aria-label="Clear selection" onClick={clear}>
+        <Button size="icon" variant="ghost" aria-label={t("Clear selection")} onClick={clear}>
           <X />
         </Button>
         <span className="mr-auto text-sm font-medium" aria-live="polite">
-          {selectedItems.length} selected
+          {selectedItems.length}{" "}{t("selected")}
         </span>
         {mode === "trash" ? (
           <>
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => void bulk((i) => api(`${path(i)}/restore`, { method: "POST" }), "Restored")}>
-              <RotateCcw /> Restore
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => void bulk((i) => api(`${path(i)}/restore`, { method: "POST" }), t("Restored"))}>
+              <RotateCcw />{" "}{t("Restore")}
             </Button>
             <Button size="sm" variant="destructive" disabled={busy} onClick={() => setPurge(selectedItems)}>
-              <XCircle /> Delete forever
+              <XCircle />{" "}{t("Delete forever")}
             </Button>
           </>
         ) : selectedItems.every(owned) ? (
           <>
             <Button size="sm" variant="outline" disabled={busy} onClick={() => setMove(selectedItems)}>
-              <FolderInput /> Move
+              <FolderInput />{" "}{t("Move")}
             </Button>
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => void bulk((i) => api(`${path(i)}/trash`, { method: "POST" }), "Moved to trash")}>
-              <Trash2 /> Trash
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => void bulk((i) => api(`${path(i)}/trash`, { method: "POST" }), t("Moved to trash"))}>
+              <Trash2 />{" "}{t("Trash")}
             </Button>
           </>
         ) : (
-          <span className="text-xs text-muted-foreground">Some selected items are shared with you and can’t be changed.</span>
+          <span className="text-xs text-muted-foreground">{t("Some selected items are shared with you and can’t be changed.")}</span>
         )}
       </div>
     ) : null;
@@ -206,9 +207,9 @@ export function useItemActions(mode: ListMode, reload: () => void, items: DriveI
     <>
       <NameDialog
         open={!!rename}
-        title={`Rename ${rename?.kind ?? ""}`}
+        title={t(rename?.kind === "folder" ? "Rename folder" : "Rename file")}
         initial={rename?.name ?? ""}
-        submitLabel="Rename"
+        submitLabel={t("Rename")}
         onClose={() => setRename(null)}
         onSubmit={async (name) => {
           await api(path(rename!), { method: "PATCH", body: { name } });
@@ -217,7 +218,7 @@ export function useItemActions(mode: ListMode, reload: () => void, items: DriveI
       />
       <MoveDialog
         open={!!move}
-        itemName={move && move.length > 1 ? `${move.length} items` : (move?.[0]?.name ?? "")}
+        itemName={move && move.length > 1 ? t("{n} items", { n: move.length }) : (move?.[0]?.name ?? "")}
         excludeFolderIds={(move ?? []).filter((i) => i.kind === "folder").map((i) => i.id)}
         onClose={() => setMove(null)}
         onMove={async (dest) => {
@@ -225,9 +226,9 @@ export function useItemActions(mode: ListMode, reload: () => void, items: DriveI
           if (list.length === 1) {
             const it = list[0]!;
             await api(path(it), { method: "PATCH", body: it.kind === "folder" ? { parentId: dest } : { folderId: dest } });
-            toast.success(`Moved “${it.name}”`);
+            toast.success(t("Moved “{name}”", { name: it.name }));
           } else {
-            await runAll(list, (it) => api(path(it), { method: "PATCH", body: it.kind === "folder" ? { parentId: dest } : { folderId: dest } }), "Moved");
+            await runAll(list, (it) => api(path(it), { method: "PATCH", body: it.kind === "folder" ? { parentId: dest } : { folderId: dest } }), t("Moved"));
             clear();
           }
           reload();
@@ -237,17 +238,17 @@ export function useItemActions(mode: ListMode, reload: () => void, items: DriveI
       <PreviewDialog file={shownPreview} onClose={closePreview} />
       <ConfirmDialog
         open={!!purge}
-        title="Delete forever?"
+        title={t("Delete forever?")}
         body={
           purge && purge.length > 1
-            ? `${purge.length} items will be permanently deleted. This cannot be undone.`
-            : `“${purge?.[0]?.name ?? ""}”${purge?.[0]?.kind === "folder" ? " and everything in it" : ""} will be permanently deleted. This cannot be undone.`
+            ? t("{length} items will be permanently deleted. This cannot be undone.", { length: purge.length })
+            : t(purge?.[0]?.kind === "folder" ? "“{name}” and everything in it will be permanently deleted. This cannot be undone." : "“{name}” will be permanently deleted. This cannot be undone.", { name: purge?.[0]?.name ?? "" })
         }
-        confirmLabel="Delete forever"
+        confirmLabel={t("Delete forever")}
         destructive
         onClose={() => setPurge(null)}
         onConfirm={async () => {
-          await runAll(purge ?? [], (i) => api(path(i), { method: "DELETE" }), "Deleted");
+          await runAll(purge ?? [], (i) => api(path(i), { method: "DELETE" }), t("Deleted"));
           clear();
           reload();
           window.dispatchEvent(new Event(USAGE_CHANGED_EVENT));

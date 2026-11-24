@@ -30,9 +30,9 @@ Setup `pnpm install && pnpm setup:local` · Dev `pnpm dev` (app :8788, fake R2 :
 - Admin (`routes/admin.ts`): session-only, sensitive actions `recent()` (10 min); never private file names/contents. Correlated subqueries use literal `"users"."id"` (Drizzle drops the table prefix).
 - D1: parameterized only, ≤100 params/statement (subqueries over big `IN`), `atomicBatch` for atomic multi-statement raw SQL. Migrations append-only; keep `db/schema.ts` in sync (`tests/worker/schema.test.ts`).
 - Logs via `lib/log.ts`; never log tokens, cookies, presigned URLs, secrets.
-- PWA caches app shell only; `/api`, `/auth`, `/s` network-only; no user data in Cache Storage/IndexedDB/Web Storage. Only Web Storage key: `filenest-theme` (`tests/web/storage-hygiene.test.ts`); `fn_theme` cookie ⇒ `light`/`dark` on share page; `public/theme-init.js` (no inline script).
+- PWA caches app shell only; `/api`, `/auth`, `/s` network-only; no user data in Cache Storage/IndexedDB/Web Storage. Only Web Storage key: `filenest-theme` (`tests/web/storage-hygiene.test.ts`); `fn_theme` / `fn_lang` cookies ⇒ only `light`/`dark` / `en`/`th` on the share page; `public/theme-init.js` (no inline script).
 - UI: shadcn/ui (`npx shadcn@latest add`, rewrite `cn` import to `@/lib/utils`) + theme tokens from `src/web/index.css`, no hard-coded colors, WCAG AA both themes.
 - MCP (`packages/mcp`): local fs only through `Workdir` (no `..`, symlink escape, silent overwrite).
 
 ## Style
-TS strict, ESM, 2 spaces, double quotes, English UI copy, comments explain *why*.
+TS strict, ESM, 2 spaces, double quotes, comments explain *why*. UI text: English source string in `t("…")` (`src/web/i18n`) + Thai in `i18n/th.ts` (typecheck enforces); call `useLocale()` where text must re-render.

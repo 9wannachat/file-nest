@@ -12,6 +12,7 @@ import { useListView, ViewToggle } from "@/components/listControls";
 import { EmptyState, ErrorState, ListSkeleton, PageHeader } from "@/components/states";
 import { useItemActions } from "@/components/useItemActions";
 import { useApi } from "@/lib/hooks";
+import { t } from "@/i18n";
 
 export function SharedPage() {
   const { data, error, loading, reload } = useApi<{ files: FileItem[] }>("/api/shared");
@@ -20,12 +21,12 @@ export function SharedPage() {
   const { view, setView, sort, onSort } = useListView({ key: "updated", dir: "desc" });
   return (
     <div className="pb-24">
-      <PageHeader title="Shared with me" description="Files other members shared with you (view and download).">
+      <PageHeader title={t("Shared with me")} description={t("Files other members shared with you (view and download).")}>
         <ViewToggle view={view} setView={setView} />
       </PageHeader>
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {loading && !data ? <ListSkeleton /> : null}
-      {data && !items.length ? <EmptyState icon={<Share2 />} title="Nothing shared with you yet" /> : null}
+      {data && !items.length ? <EmptyState icon={<Share2 />} title={t("Nothing shared with you yet")} /> : null}
       {items.length ? <FileList items={items} actionsFor={actionsFor} onOpen={open} showOwner view={view} sort={sort} onSort={onSort} /> : null}
       {dialogs}
     </div>
@@ -40,18 +41,18 @@ export function TrashPage() {
   const [confirmEmpty, setConfirmEmpty] = useState(false);
   return (
     <div className="pb-24">
-      <PageHeader title="Trash" description="Items in trash still count toward your storage and are deleted forever after the retention period.">
+      <PageHeader title={t("Trash")} description={t("Items in trash still count toward your storage and are deleted forever after the retention period.")}>
         {items.length ? (
           <Button variant="outline" onClick={() => setConfirmEmpty(true)}>
-            <Trash2 /> Empty trash
+            <Trash2 />{" "}{t("Empty trash")}
           </Button>
         ) : null}
       </PageHeader>
       <ConfirmDialog
         open={confirmEmpty}
-        title="Empty trash?"
-        body="Everything in your trash will be permanently deleted. This cannot be undone."
-        confirmLabel="Empty trash"
+        title={t("Empty trash?")}
+        body={t("Everything in your trash will be permanently deleted. This cannot be undone.")}
+        confirmLabel={t("Empty trash")}
         destructive
         onClose={() => setConfirmEmpty(false)}
         onConfirm={async () => {
@@ -63,7 +64,7 @@ export function TrashPage() {
             purged += r.purged;
             left = r.remaining;
           }
-          toast.success(`Deleted ${purged} item${purged === 1 ? "" : "s"} permanently`);
+          toast.success(t(purged === 1 ? "Deleted {n} item permanently" : "Deleted {n} items permanently", { n: purged }));
           window.dispatchEvent(new Event(USAGE_CHANGED_EVENT));
           reload();
         }}
@@ -71,9 +72,9 @@ export function TrashPage() {
       {bulkBar}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {loading && !data ? <ListSkeleton /> : null}
-      {data && !items.length ? <EmptyState icon={<Trash2 />} title="Trash is empty" /> : null}
+      {data && !items.length ? <EmptyState icon={<Trash2 />} title={t("Trash is empty")} /> : null}
       {items.length ? (
-        <FileList items={items} actionsFor={actionsFor} onOpen={open} dateLabel="Trashed" sort={sort} onSort={onSort} {...selection} />
+        <FileList items={items} actionsFor={actionsFor} onOpen={open} dateLabel={t("Trashed")} sort={sort} onSort={onSort} {...selection} />
       ) : null}
       {dialogs}
     </div>
@@ -89,15 +90,15 @@ export function SearchPage() {
   const { view, setView, sort, onSort } = useListView();
   return (
     <div className="pb-24">
-      <PageHeader title={`Results for “${q}”`}>
+      <PageHeader title={t("Results for “{q}”", { q: q })}>
         <ViewToggle view={view} setView={setView} />
       </PageHeader>
       {bulkBar}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {loading && !data ? <ListSkeleton /> : null}
       {data && !items.length ? (
-        <EmptyState icon={<Search />} title="No matches">
-          Search looks at names of your files and files shared with you.
+        <EmptyState icon={<Search />} title={t("No matches")}>
+          {t("Search looks at names of your files and files shared with you.")}
         </EmptyState>
       ) : null}
       {items.length ? (

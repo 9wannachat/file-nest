@@ -9,8 +9,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import { formatDate } from "@/lib/utils";
+import { t, type MessageKey } from "@/i18n";
 
-const GROUPS: [string, string][] = [
+const GROUPS: [string, MessageKey][] = [
   ["all", "All actions"],
   ["member.", "Members"],
   ["invite.", "Invitations"],
@@ -45,20 +46,20 @@ export function AuditPage() {
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <Select value={group} onValueChange={setGroup}>
-          <SelectTrigger aria-label="Filter actions" className="w-48">
+          <SelectTrigger aria-label={t("Filter actions")} className="w-48">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {GROUPS.map(([v, l]) => (
               <SelectItem key={v} value={v}>
-                {l}
+                {t(l)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         <Button asChild variant="outline" className="ml-auto">
           <a href={`/api/admin/audit.csv${filter ? `?${filter}` : ""}`} download>
-            <Download /> Export CSV
+            <Download />{" "}{t("Export CSV")}
           </a>
         </Button>
       </div>
@@ -69,10 +70,10 @@ export function AuditPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-44">When</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead className="hidden md:table-cell">Actor</TableHead>
-                <TableHead className="hidden lg:table-cell">Details</TableHead>
+                <TableHead className="w-44">{t("When")}</TableHead>
+                <TableHead>{t("Action")}</TableHead>
+                <TableHead className="hidden md:table-cell">{t("Actor")}</TableHead>
+                <TableHead className="hidden lg:table-cell">{t("Details")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -91,7 +92,7 @@ export function AuditPage() {
               {!data.events.length ? (
                 <TableRow>
                   <TableCell colSpan={4} className="text-muted-foreground">
-                    No events.
+                    {t("No events.")}
                   </TableCell>
                 </TableRow>
               ) : null}
@@ -101,7 +102,7 @@ export function AuditPage() {
       ) : null}
       {data && data.events.length >= 100 ? (
         <Button variant="outline" className="w-fit" disabled={more} onClick={() => void loadMore()}>
-          Load older
+          {t("Load older")}
         </Button>
       ) : null}
     </div>

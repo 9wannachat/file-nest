@@ -103,3 +103,27 @@ describe("/api/me usage", () => {
     expect(b.user.usedBytes).toBe(0);
   });
 });
+
+describe("share page language", () => {
+  it("follows fn_lang, then Accept-Language, and never echoes the cookie", async () => {
+    const path = await makeLink();
+    const get = (headers: Record<string, string> = {}) => t.call(path, { headers });
+    const th = await get({ Cookie: "fn_lang=th" });
+    expect(th.headers.get("Content-Language")).toBe("th");
+    const thHtml = await th.text();
+    expect(thHtml).toContain('<html lang="th">');
+    expect(thHtml).toContain("ดาวน์โหลด");
+    expect(await (await get({ "Accept-Language": "th-TH,th;q=0.9,en;q=0.8" })).text()).toContain('<html lang="th">');
+    expect(await (await get({ Cookie: "fn_lang=en", "Accept-Language": "th" })).text()).toContain('<html lang="en">');
+    const evil = await (await get({ Cookie: 'fn_lang="><script>x</script>' })).text();
+    expect(evil).toContain('<html lang="en">');
+    expect(evil).not.toContain("<script>x");
+    const odd = await get({ Cookie: "fn_lang=th%0d%0aX-Injected:1" });
+    expect(odd.headers.get("Content-Language")).toBe("en");
+    expect(odd.headers.get("X-Injected")).toBeNull();
+    expect(odd.headers.get("Cache-Control")).toContain("no-store");
+    expect(odd.headers.get("Vary")).toBe("Cookie, Accept-Language");
+    // Unavailable page is translated too.
+    expect(await (await t.call(`/s/${"A".repeat(43)}`, { headers: { Cookie: "fn_lang=th" } })).text()).toContain("ลิงก์นี้ใช้งานไม่ได้");
+  });
+});

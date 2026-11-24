@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import type { ApiTokenInfo } from "@shared/types";
 import { EmptyState, ErrorState, PageHeader, Spinner } from "@/components/states";
 import { THEME_OPTIONS } from "@/components/ThemeToggle";
+import { LanguagePicker } from "@/components/LanguageSwitcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,11 +19,12 @@ import { useApi } from "@/lib/hooks";
 import { cn, formatDate } from "@/lib/utils";
 import { useTheme } from "@/theme";
 import { SecurityCard } from "./SecurityCard";
+import { t } from "@/i18n";
 
-function statusOf(t: ApiTokenInfo): { label: string; variant: "secondary" | "outline" | "destructive" } {
-  if (t.revokedAt) return { label: "Revoked", variant: "destructive" };
-  if (t.expiresAt <= Date.now()) return { label: "Expired", variant: "outline" };
-  return { label: "Active", variant: "secondary" };
+function statusOf(tg: ApiTokenInfo): { label: string; variant: "secondary" | "outline" | "destructive" } {
+  if (tg.revokedAt) return { label: t("Revoked"), variant: "destructive" };
+  if (tg.expiresAt <= Date.now()) return { label: t("Expired"), variant: "outline" };
+  return { label: t("Active"), variant: "secondary" };
 }
 
 function AppearanceCard() {
@@ -30,11 +32,11 @@ function AppearanceCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Appearance</CardTitle>
-        <CardDescription>System follows your device setting.</CardDescription>
+        <CardTitle>{t("Appearance")}</CardTitle>
+        <CardDescription>{t("System follows your device setting.")}</CardDescription>
       </CardHeader>
       <CardContent>
-        <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-2 sm:max-w-md">
+        <div role="radiogroup" aria-label={t("Theme")} className="grid grid-cols-3 gap-2 sm:max-w-md">
           {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
             <button
               key={value}
@@ -47,9 +49,13 @@ function AppearanceCard() {
               )}
             >
               <Icon className="size-5" aria-hidden />
-              {label}
+              {t(label)}
             </button>
           ))}
+        </div>
+        <div className="mt-4 grid gap-2">
+          <span className="text-sm font-medium">{t("Language")}</span>
+          <LanguagePicker />
         </div>
       </CardContent>
     </Card>
@@ -82,10 +88,10 @@ export function SettingsPage() {
     }
   };
 
-  const revoke = async (t: ApiTokenInfo) => {
+  const revoke = async (tg: ApiTokenInfo) => {
     try {
-      await api(`/api/tokens/${t.id}`, { method: "DELETE" });
-      toast.success(`Revoked “${t.name}”`);
+      await api(`/api/tokens/${tg.id}`, { method: "DELETE" });
+      toast.success(t("Revoked “{name}”", { name: tg.name }));
       void reload();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -95,36 +101,35 @@ export function SettingsPage() {
   const copy = async (v: string) => {
     try {
       await navigator.clipboard.writeText(v);
-      toast.success("Copied");
+      toast.success(t("Copied"));
     } catch {
-      toast.error("Could not copy. Select the text and copy it manually.");
+      toast.error(t("Could not copy. Select the text and copy it manually."));
     }
   };
 
   return (
     <div className="mx-auto max-w-4xl pb-24">
-      <PageHeader title="Settings" description="Appearance, security and API tokens." />
+      <PageHeader title={t("Settings")} description={t("Appearance, security and API tokens.")} />
       <div className="grid gap-4 px-4 sm:px-6">
         <AppearanceCard />
         <SecurityCard />
 
         <Card>
           <CardHeader>
-            <CardTitle>API tokens</CardTitle>
+            <CardTitle>{t("API tokens")}</CardTitle>
             <CardDescription>
-              Let tools on your computer, such as the FileNest MCP server for AI assistants, read your files and upload results. A token acts as you, but it
-              can’t share, delete, move to trash or use admin features.
+              {t("Let tools on your computer, such as the FileNest MCP server for AI assistants, read your files and upload results. A token acts as you, but it can’t share, delete, move to trash or use admin features.")}
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
             <form onSubmit={create} className="grid gap-4">
               <div className="grid gap-4 sm:grid-cols-[1fr_10rem]">
                 <div className="grid gap-2">
-                  <Label htmlFor="token-name">Name</Label>
-                  <Input id="token-name" required maxLength={64} placeholder="e.g. MacBook MCP" value={name} onChange={(e) => setName(e.target.value)} />
+                  <Label htmlFor="token-name">{t("Name")}</Label>
+                  <Input id="token-name" required maxLength={64} placeholder={t("e.g. MacBook MCP")} value={name} onChange={(e) => setName(e.target.value)} />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="token-days">Expires</Label>
+                  <Label htmlFor="token-days">{t("Expires")}</Label>
                   <Select value={days} onValueChange={setDays}>
                     <SelectTrigger id="token-days" className="w-full">
                       <SelectValue />
@@ -132,7 +137,7 @@ export function SettingsPage() {
                     <SelectContent>
                       {[7, 30, 90, 180, 365].map((d) => (
                         <SelectItem key={d} value={String(d)}>
-                          {d} days
+                          {d}{" "}{t("days")}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -141,56 +146,56 @@ export function SettingsPage() {
               </div>
               <Label className="flex items-center gap-2 font-normal">
                 <Checkbox checked={write} onCheckedChange={(v) => setWrite(v === true)} />
-                Allow uploads and creating folders (<code>files:write</code>). Reading is always included.
+                {t("Allow uploads and creating folders (")}<code>{t("files:write")}</code>{t("). Reading is always included.")}
               </Label>
               <div>
                 <Button type="submit" disabled={busy || !name.trim()}>
-                  <Plus /> Create token
+                  <Plus />{" "}{t("Create token")}
                 </Button>
               </div>
             </form>
 
             {error ? <ErrorState message={error} onRetry={reload} /> : null}
             {loading && !data ? <Spinner /> : null}
-            {data && !data.tokens.length ? <EmptyState icon={<KeyRound />} title="No tokens yet" /> : null}
+            {data && !data.tokens.length ? <EmptyState icon={<KeyRound />} title={t("No tokens yet")} /> : null}
             {data?.tokens.length ? (
               <div className="rounded-md border">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Token</TableHead>
-                      <TableHead className="hidden md:table-cell">Expires</TableHead>
-                      <TableHead className="hidden md:table-cell">Last used</TableHead>
+                      <TableHead>{t("Token")}</TableHead>
+                      <TableHead className="hidden md:table-cell">{t("Expires")}</TableHead>
+                      <TableHead className="hidden md:table-cell">{t("Last used")}</TableHead>
                       <TableHead className="text-right">
-                        <span className="sr-only">Actions</span>
+                        <span className="sr-only">{t("Actions")}</span>
                       </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.tokens.map((t) => {
-                      const st = statusOf(t);
+                    {data.tokens.map((tg) => {
+                      const st = statusOf(tg);
                       return (
-                        <TableRow key={t.id}>
+                        <TableRow key={tg.id}>
                           <TableCell>
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-medium">{t.name}</span>
+                              <span className="font-medium">{tg.name}</span>
                               <Badge variant={st.variant}>{st.label}</Badge>
-                              {t.scopes.map((s) => (
+                              {tg.scopes.map((s) => (
                                 <Badge key={s} variant="outline">
                                   {s}
                                 </Badge>
                               ))}
                             </div>
                             <div className="text-xs text-muted-foreground md:hidden">
-                              Expires {formatDate(t.expiresAt)} · {t.lastUsedAt ? `last used ${formatDate(t.lastUsedAt)}` : "never used"}
+                              {t("Expires")}{" "}{formatDate(tg.expiresAt)} · {tg.lastUsedAt ? t("last used {lastUsedAt}", { lastUsedAt: formatDate(tg.lastUsedAt) }) : t("never used")}
                             </div>
                           </TableCell>
-                          <TableCell className="hidden text-muted-foreground md:table-cell">{formatDate(t.expiresAt)}</TableCell>
-                          <TableCell className="hidden text-muted-foreground md:table-cell">{t.lastUsedAt ? formatDate(t.lastUsedAt) : "Never"}</TableCell>
+                          <TableCell className="hidden text-muted-foreground md:table-cell">{formatDate(tg.expiresAt)}</TableCell>
+                          <TableCell className="hidden text-muted-foreground md:table-cell">{tg.lastUsedAt ? formatDate(tg.lastUsedAt) : t("Never")}</TableCell>
                           <TableCell className="text-right">
                             {st.label === "Active" ? (
-                              <Button variant="outline" size="sm" onClick={() => void revoke(t)} aria-label={`Revoke ${t.name}`}>
-                                <Trash2 /> Revoke
+                              <Button variant="outline" size="sm" onClick={() => void revoke(tg)} aria-label={t("Revoke {name}", { name: tg.name })}>
+                                <Trash2 />{" "}{t("Revoke")}
                               </Button>
                             ) : null}
                           </TableCell>
@@ -206,10 +211,9 @@ export function SettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Use with an AI assistant (MCP)</CardTitle>
+            <CardTitle>{t("Use with an AI assistant (MCP)")}</CardTitle>
             <CardDescription>
-              Save the token in a file only you can read, then add the FileNest MCP server to your assistant. It downloads into and uploads from one working
-              folder only.
+              {t("Save the token in a file only you can read, then add the FileNest MCP server to your assistant. It downloads into and uploads from one working folder only.")}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -233,20 +237,20 @@ export function SettingsPage() {
       <Dialog open={!!created} onOpenChange={(o) => !o && setCreated(null)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Copy your new token</DialogTitle>
-            <DialogDescription>It won’t be shown again. Store it somewhere safe.</DialogDescription>
+            <DialogTitle>{t("Copy your new token")}</DialogTitle>
+            <DialogDescription>{t("It won’t be shown again. Store it somewhere safe.")}</DialogDescription>
           </DialogHeader>
           <div className="flex gap-2">
-            <Input readOnly value={created ?? ""} aria-label="New token" onFocus={(e) => e.currentTarget.select()} className="font-mono text-xs" />
-            <Button variant="outline" aria-label="Copy token" onClick={() => created && void copy(created)}>
-              <Copy /> Copy
+            <Input readOnly value={created ?? ""} aria-label={t("New token")} onFocus={(e) => e.currentTarget.select()} className="font-mono text-xs" />
+            <Button variant="outline" aria-label={t("Copy token")} onClick={() => created && void copy(created)}>
+              <Copy />{" "}{t("Copy")}
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Tip: paste it into <code>~/.config/filenest/token</code>, then run <code>chmod 600 ~/.config/filenest/token</code>.
+            {t("Tip: paste it into")}{" "}<code>{t("~/.config/filenest/token")}</code>{t(", then run")}{" "}<code>{t("chmod 600 ~/.config/filenest/token")}</code>.
           </p>
           <DialogFooter>
-            <Button onClick={() => setCreated(null)}>Done</Button>
+            <Button onClick={() => setCreated(null)}>{t("Done")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

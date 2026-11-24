@@ -1,8 +1,9 @@
 import { Activity, Database, Globe, HardDrive, LayoutDashboard, Mail, Settings2, Users } from "lucide-react";
 import { NavLink, Outlet } from "react-router";
 import { cn } from "@/lib/utils";
+import { t, type MessageKey } from "@/i18n";
 
-const NAV = [
+const NAV: { to: string; label: MessageKey; icon: typeof Users; end?: boolean }[] = [
   { to: "/admin", label: "Overview", icon: LayoutDashboard, end: true },
   { to: "/admin/members", label: "Members", icon: Users },
   { to: "/admin/usage", label: "Usage", icon: HardDrive },
@@ -18,10 +19,10 @@ export function AdminLayout() {
   return (
     <div className="mx-auto max-w-6xl pb-24">
       <div className="px-4 pt-5 pb-2 sm:px-6">
-        <h1 className="text-xl font-semibold tracking-tight">Admin Console</h1>
-        <p className="text-sm text-muted-foreground">Members, access, settings and storage for this FileNest.</p>
+        <h1 className="text-xl font-semibold tracking-tight">{t("Admin Console")}</h1>
+        <p className="text-sm text-muted-foreground">{t("Members, access, settings and storage for this FileNest.")}</p>
       </div>
-      <nav aria-label="Admin sections" className="sticky top-0 z-10 border-b bg-background/95 px-2 backdrop-blur sm:px-4">
+      <nav aria-label={t("Admin sections")} className="sticky top-0 z-10 border-b bg-background/95 px-2 backdrop-blur sm:px-4">
         <ul className="flex gap-1 overflow-x-auto">
           {NAV.map(({ to, label, icon: Icon, end }) => (
             <li key={to}>
@@ -35,7 +36,7 @@ export function AdminLayout() {
                   )
                 }
               >
-                <Icon className="size-4" aria-hidden /> {label}
+                <Icon className="size-4" aria-hidden /> {t(label)}
               </NavLink>
             </li>
           ))}

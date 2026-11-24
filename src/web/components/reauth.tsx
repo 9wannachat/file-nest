@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, ApiError, errorMessage } from "@/lib/api";
+import { t } from "@/i18n";
 
 type Run = <T>(fn: () => Promise<T>) => Promise<T | undefined>;
 const Ctx = createContext<Run | null>(null);
@@ -57,7 +58,7 @@ export function ReauthProvider({ children }: { children: ReactNode }) {
     setError(null);
     try {
       await api("/api/account/reauth", { method: "POST", body: account?.mfa.enabled ? { code: value.trim() } : { password: value } });
-      toast.success("Confirmed");
+      toast.success(t("Confirmed"));
       finish(true);
     } catch (err) {
       setError(errorMessage(err));
@@ -76,15 +77,15 @@ export function ReauthProvider({ children }: { children: ReactNode }) {
           <form onSubmit={submit} className="grid gap-4">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <ShieldCheck className="size-5 text-primary" aria-hidden /> Confirm it’s you
+                <ShieldCheck className="size-5 text-primary" aria-hidden />{" "}{t("Confirm it’s you")}
               </DialogTitle>
-              <DialogDescription>This action needs a recent confirmation.</DialogDescription>
+              <DialogDescription>{t("This action needs a recent confirmation.")}</DialogDescription>
             </DialogHeader>
             {mode === "signin" ? (
-              <p className="text-sm text-muted-foreground">Sign in again to continue, then repeat the action.</p>
+              <p className="text-sm text-muted-foreground">{t("Sign in again to continue, then repeat the action.")}</p>
             ) : (
               <div className="grid gap-2">
-                <Label htmlFor="reauth-input">{mode === "code" ? "Authenticator code" : "Password"}</Label>
+                <Label htmlFor="reauth-input">{mode === "code" ? t("Authenticator code") : t("Password")}</Label>
                 <Input
                   id="reauth-input"
                   autoFocus
@@ -105,15 +106,15 @@ export function ReauthProvider({ children }: { children: ReactNode }) {
             )}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => finish(false)}>
-                Cancel
+                {t("Cancel")}
               </Button>
               {mode === "signin" ? (
                 <Button asChild>
-                  <a href={`/auth/login?return_to=${encodeURIComponent(location.pathname + location.search)}`}>Sign in again</a>
+                  <a href={`/auth/login?return_to=${encodeURIComponent(location.pathname + location.search)}`}>{t("Sign in again")}</a>
                 </Button>
               ) : (
                 <Button type="submit" disabled={busy || !value}>
-                  Confirm
+                  {t("Confirm")}
                 </Button>
               )}
             </DialogFooter>

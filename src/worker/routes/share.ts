@@ -60,32 +60,82 @@ input{background:var(--input);color:var(--fg);border-color:var(--border)!importa
 .err{color:var(--err);font-weight:600}
 `;
 
-function page(title: string, body: string, status = 200, theme = "") {
-  const html = `<!doctype html><html lang="en"${theme ? ` class="${theme}"` : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+/** Share page text. Language follows the viewer's FileNest choice (fn_lang cookie), else Accept-Language. */
+const TEXT = {
+  en: {
+    sharedFile: "Shared file",
+    unavailableTitle: "Link unavailable",
+    unavailable: "This link is not available",
+    unavailableHint: "It may have been revoked, or the file was removed.",
+    pwTitle: "Password required",
+    pwHeading: "This file is password protected",
+    pwHint: "Enter the password you received from the person who shared it.",
+    password: "Password",
+    unlock: "Unlock",
+    sameOrigin: "Please submit the form from this page.",
+    locked: "Too many attempts. Try again in {n} minute(s).",
+    wrong: "Incorrect password.",
+    noPreview: "Preview is not available for this file type.",
+    download: "Download",
+  },
+  th: {
+    sharedFile: "ไฟล์ที่แชร์",
+    unavailableTitle: "ลิงก์ใช้งานไม่ได้",
+    unavailable: "ลิงก์นี้ใช้งานไม่ได้",
+    unavailableHint: "ลิงก์อาจถูกเพิกถอน หรือไฟล์ถูกลบไปแล้ว",
+    pwTitle: "ต้องใช้รหัสผ่าน",
+    pwHeading: "ไฟล์นี้ป้องกันด้วยรหัสผ่าน",
+    pwHint: "กรอกรหัสผ่านที่ได้รับจากผู้แชร์ไฟล์",
+    password: "รหัสผ่าน",
+    unlock: "ปลดล็อก",
+    sameOrigin: "กรุณาส่งฟอร์มจากหน้านี้",
+    locked: "ลองหลายครั้งเกินไป ลองใหม่ในอีก {n} นาที",
+    wrong: "รหัสผ่านไม่ถูกต้อง",
+    noPreview: "ดูตัวอย่างไฟล์ประเภทนี้ไม่ได้",
+    download: "ดาวน์โหลด",
+  },
+} satisfies Record<string, Record<string, string>>;
+type Lang = keyof typeof TEXT;
+
+/** How the viewer wants the page: theme class ("dark" | "light" | "" = follow the OS) and language. */
+interface View {
+  theme: string;
+  lang: Lang;
+}
+
+export function shareLang(cookie: string | undefined, acceptLanguage: string | undefined): Lang {
+  if (cookie === "th" || cookie === "en") return cookie;
+  const first = (acceptLanguage ?? "").split(",")[0]?.trim().toLowerCase() ?? "";
+  return first.startsWith("th") ? "th" : "en";
+}
+
+function viewOf(c: Context<AppEnv>): View {
+  const t = getCookie(c, "fn_theme");
+  return { theme: t === "dark" || t === "light" ? t : "", lang: shareLang(getCookie(c, "fn_lang"), c.req.header("Accept-Language")) };
+}
+
+function page(title: string, body: string, status: number, v: View) {
+  const html = `<!doctype html><html lang="${v.lang}"${v.theme ? ` class="${v.theme}"` : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer"><meta name="robots" content="noindex,nofollow"><title>${esc(title)} · FileNest</title>
-<style>${STYLE}</style></head><body><header><b>FileNest</b><span class="meta">Shared file</span></header><main>${body}</main></body></html>`;
+<style>${STYLE}</style></head><body><header><b>FileNest</b><span class="meta">${TEXT[v.lang].sharedFile}</span></header><main>${body}</main></body></html>`;
   return new Response(html, {
     status,
-    headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": PAGE_CSP, "X-Frame-Options": "DENY" },
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Language": v.lang,
+      Vary: "Cookie, Accept-Language",
+      "Content-Security-Policy": PAGE_CSP,
+      "X-Frame-Options": "DENY",
+    },
   });
 }
 
-function notAvailable(theme = "") {
-  return page(
-    "Link unavailable",
-    `<div class="card"><h1>This link is not available</h1><p class="meta">It may have been revoked, or the file was removed.</p></div>`,
-    404,
-    theme,
-  );
+function notAvailable(v: View) {
+  const x = TEXT[v.lang];
+  return page(x.unavailableTitle, `<div class="card"><h1>${x.unavailable}</h1><p class="meta">${x.unavailableHint}</p></div>`, 404, v);
 }
 
 const UNLOCK_COOKIE = "fn_unlock";
-
-/** "dark" | "light" from the viewer's FileNest theme choice; "" = follow the OS. */
-function themeClass(c: Context<AppEnv>): string {
-  const t = getCookie(c, "fn_theme");
-  return t === "dark" || t === "light" ? t : "";
-}
 
 async function resolve(c: Context<AppEnv>) {
   try {
@@ -104,40 +154,42 @@ async function unlocked(c: Context<AppEnv>, link: Awaited<ReturnType<typeof link
   return isUnlocked(c.env, link, getCookie(c, UNLOCK_COOKIE), c.get("deps").now());
 }
 
-function passwordPage(base: string, message: string | null, status: number, theme = "") {
+function passwordPage(base: string, message: string | null, status: number, v: View) {
+  const x = TEXT[v.lang];
   // The file name and size stay hidden until the password is accepted.
   return page(
-    "Password required",
-    `<div class="card"><h1>This file is password protected</h1>
-<p class="meta">Enter the password you received from the person who shared it.</p>
+    x.pwTitle,
+    `<div class="card"><h1>${x.pwHeading}</h1>
+<p class="meta">${x.pwHint}</p>
 ${message ? `<p role="alert" class="err">${esc(message)}</p>` : ""}
 <form method="post" action="${base}/unlock" style="display:flex;flex-direction:column;gap:.75rem;margin-top:1rem;max-width:22rem">
-<label for="pw" style="font-weight:600">Password</label>
+<label for="pw" style="font-weight:600">${x.password}</label>
 <input id="pw" name="password" type="password" required autocomplete="current-password" maxlength="512" autofocus
  style="min-height:44px;padding:0 .75rem;border:1px solid #cbd5e1;border-radius:8px;font:inherit">
-<button class="btn" type="submit" style="border:0;cursor:pointer;font:inherit;font-weight:600">Unlock</button>
+<button class="btn" type="submit" style="border:0;cursor:pointer;font:inherit;font-weight:600">${x.unlock}</button>
 </form></div>`,
     status,
-    theme,
+    v,
   );
 }
 
 shareRoutes.post("/:token/unlock", async (c) => {
   const found = await resolve(c);
-  if (!found) return notAvailable(themeClass(c));
+  const v = viewOf(c);
+  if (!found) return notAvailable(v);
   const base = `/s/${encodeURIComponent(c.req.param("token"))}`;
   // Same-origin form posts only. Note: with Referrer-Policy: no-referrer browsers
   // send "Origin: null" on this form post, so Sec-Fetch-Site is the primary signal.
   const sameSite = c.req.header("Sec-Fetch-Site") === "same-origin" || c.req.header("Origin") === appOrigin(c);
   if (!sameSite) {
-    return passwordPage(base, "Please submit the form from this page.", 403, themeClass(c));
+    return passwordPage(base, TEXT[v.lang].sameOrigin, 403, v);
   }
   if (!found.link.passwordHash) return c.redirect(base, 303);
   let password = "";
   try {
     const form = await c.req.formData();
-    const v = form.get("password");
-    password = typeof v === "string" ? v : "";
+    const pw = form.get("password");
+    password = typeof pw === "string" ? pw : "";
   } catch {
     password = "";
   }
@@ -146,11 +198,11 @@ shareRoutes.post("/:token/unlock", async (c) => {
   const r = await attemptUnlock(c.get("db"), found.link, clientKey, password, now);
   if (!r.ok) {
     if (r.reason === "locked") {
-      const res = passwordPage(base, `Too many attempts. Try again in ${Math.ceil(r.retryAfterMs / 60_000)} minute(s).`, 429, themeClass(c));
+      const res = passwordPage(base, TEXT[v.lang].locked.replace("{n}", String(Math.ceil(r.retryAfterMs / 60_000))), 429, v);
       res.headers.set("Retry-After", String(Math.ceil(r.retryAfterMs / 1000)));
       return res;
     }
-    return passwordPage(base, "Incorrect password.", 401, themeClass(c));
+    return passwordPage(base, TEXT[v.lang].wrong, 401, v);
   }
   setCookie(c, UNLOCK_COOKIE, await makeUnlockCookie(c.env, found.link, now), {
     httpOnly: true,
@@ -164,9 +216,10 @@ shareRoutes.post("/:token/unlock", async (c) => {
 
 shareRoutes.get("/:token", async (c) => {
   const found = await resolve(c);
-  if (!found) return notAvailable(themeClass(c));
+  const v = viewOf(c);
+  if (!found) return notAvailable(v);
   const base = `/s/${encodeURIComponent(c.req.param("token"))}`;
-  if (!(await unlocked(c, found.link))) return passwordPage(base, null, 401, themeClass(c));
+  if (!(await unlocked(c, found.link))) return passwordPage(base, null, 401, v);
   const file = found.file;
   const ct = file.contentType;
   let preview = "";
@@ -180,10 +233,10 @@ shareRoutes.get("/:token", async (c) => {
   return page(
     file.name,
     `<div class="card"><h1>${esc(file.name)}</h1><div class="meta">${formatBytes(file.size)}</div>
-${preview ? `<div class="preview">${preview}</div>` : `<p class="meta">Preview is not available for this file type.</p>`}
-<a class="btn" href="${base}/download">Download</a></div>`,
+${preview ? `<div class="preview">${preview}</div>` : `<p class="meta">${TEXT[v.lang].noPreview}</p>`}
+<a class="btn" href="${base}/download">${TEXT[v.lang].download}</a></div>`,
     200,
-    themeClass(c),
+    v,
   );
 });
 

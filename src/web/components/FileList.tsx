@@ -23,6 +23,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn, formatBytes, formatDate } from "@/lib/utils";
+import { t } from "@/i18n";
 
 export interface ItemAction {
   id: string;
@@ -41,11 +42,11 @@ export type ViewMode = "list" | "grid";
 export const itemKey = (i: DriveItem) => `${i.kind}:${i.id}`;
 
 export function fileIcon(f: FileItem, className = "") {
-  const t = f.contentType;
-  if (t.startsWith("image/")) return <FileImage className={cn("text-violet-600 dark:text-violet-400", className)} />;
-  if (t.startsWith("video/")) return <FileVideo className={cn("text-rose-600 dark:text-rose-400", className)} />;
-  if (t.startsWith("audio/")) return <Music className={cn("text-amber-600 dark:text-amber-400", className)} />;
-  if (t === "application/pdf" || t.startsWith("text/")) return <FileText className={cn("text-sky-600 dark:text-sky-400", className)} />;
+  const ct = f.contentType;
+  if (ct.startsWith("image/")) return <FileImage className={cn("text-violet-600 dark:text-violet-400", className)} />;
+  if (ct.startsWith("video/")) return <FileVideo className={cn("text-rose-600 dark:text-rose-400", className)} />;
+  if (ct.startsWith("audio/")) return <Music className={cn("text-amber-600 dark:text-amber-400", className)} />;
+  if (ct === "application/pdf" || ct.startsWith("text/")) return <FileText className={cn("text-sky-600 dark:text-sky-400", className)} />;
   return <File className={cn("text-muted-foreground", className)} />;
 }
 
@@ -73,7 +74,7 @@ function ActionsMenu({ item, actions }: { item: DriveItem; actions: ItemAction[]
       size="icon"
       variant="ghost"
       className="tap-target size-10 md:size-8"
-      aria-label={`Actions for ${item.name}`}
+      aria-label={t("Actions for {name}", { name: item.name })}
       onClick={isMobile ? (e) => (e.stopPropagation(), setSheet(true)) : (e) => e.stopPropagation()}
     >
       <MoreVertical />
@@ -90,9 +91,9 @@ function ActionsMenu({ item, actions }: { item: DriveItem; actions: ItemAction[]
                 <ItemIcon item={item} className="size-5 shrink-0" />
                 <span className="truncate">{item.name}</span>
               </SheetTitle>
-              <SheetDescription className="sr-only">Actions</SheetDescription>
+              <SheetDescription className="sr-only">{t("Actions")}</SheetDescription>
             </SheetHeader>
-            <ul className="px-2" role="menu" aria-label={`Actions for ${item.name}`}>
+            <ul className="px-2" role="menu" aria-label={t("Actions for {name}", { name: item.name })}>
               {actions.map((a) => (
                 <li key={a.id} role="none">
                   {a.separatorBefore ? <div className="my-1 h-px bg-border" /> : null}
@@ -165,17 +166,17 @@ function SharingBadges({ item }: { item: DriveItem }) {
       {item.hasPublicLink ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <Globe className="size-4 shrink-0 text-primary" aria-label="Public link" />
+            <Globe className="size-4 shrink-0 text-primary" aria-label={t("Public link")} />
           </TooltipTrigger>
-          <TooltipContent>Anyone with the link</TooltipContent>
+          <TooltipContent>{t("Anyone with the link")}</TooltipContent>
         </Tooltip>
       ) : null}
       {item.sharedWithCount > 0 ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <Users className="size-4 shrink-0 text-muted-foreground" aria-label={`Shared with ${item.sharedWithCount}`} />
+            <Users className="size-4 shrink-0 text-muted-foreground" aria-label={t("Shared with {sharedWithCount}", { sharedWithCount: item.sharedWithCount })} />
           </TooltipTrigger>
-          <TooltipContent>Shared with {item.sharedWithCount} member(s)</TooltipContent>
+          <TooltipContent>{t("Shared with")}{" "}{item.sharedWithCount}{" "}{t("member(s)")}</TooltipContent>
         </Tooltip>
       ) : null}
     </>
@@ -201,7 +202,7 @@ function SortHeader({
       type="button"
       onClick={() => onSort(k)}
       className={cn("inline-flex items-center gap-1 rounded hover:text-foreground", active && "text-foreground", className)}
-      aria-label={`Sort by ${children}${active ? (sort.dir === "asc" ? ", ascending" : ", descending") : ""}`}
+      aria-label={t(!active ? "Sort by {col}" : sort.dir === "asc" ? "Sort by {col}, ascending" : "Sort by {col}, descending", { col: String(children) })}
     >
       {children}
       {active ? sort.dir === "asc" ? <ArrowUp className="size-3.5" /> : <ArrowDown className="size-3.5" /> : null}
@@ -215,8 +216,8 @@ function gridColumns(container: HTMLElement | null): number {
   if (!tiles?.length) return 1;
   const top = tiles[0]!.offsetTop;
   let n = 0;
-  for (const t of tiles) {
-    if (t.offsetTop !== top) break;
+  for (const tile of tiles) {
+    if (tile.offsetTop !== top) break;
     n++;
   }
   return Math.max(1, n);
@@ -240,7 +241,7 @@ export function FileList({
   actionsFor,
   onOpen,
   showOwner,
-  dateLabel = "Modified",
+  dateLabel = t("Modified"),
   view = "list",
   sort,
   onSort,
@@ -296,7 +297,7 @@ export function FileList({
         checked={selected.has(itemKey(item))}
         onCheckedChange={(v) => toggle(item, v === true)}
         onClick={(e) => e.stopPropagation()}
-        aria-label={`Select ${item.name}`}
+        aria-label={t("Select {name}", { name: item.name })}
         className="size-5 md:size-4"
       />
     ) : null;
@@ -309,15 +310,15 @@ export function FileList({
             <Checkbox
               checked={allSelected ? true : someSelected ? "indeterminate" : false}
               onCheckedChange={(v) => onSelectedChange(v === true ? new Set(sorted.map(itemKey)) : new Set())}
-              aria-label="Select all"
+              aria-label={t("Select all")}
             />
           ) : null}
-          <span>Sort:</span>
-          <SortHeader k="name" sort={sort} onSort={onSort}>Name</SortHeader>
+          <span>{t("Sort:")}</span>
+          <SortHeader k="name" sort={sort} onSort={onSort}>{t("Name")}</SortHeader>
           <SortHeader k="updated" sort={sort} onSort={onSort}>{dateLabel}</SortHeader>
-          <SortHeader k="size" sort={sort} onSort={onSort}>Size</SortHeader>
+          <SortHeader k="size" sort={sort} onSort={onSort}>{t("Size")}</SortHeader>
         </div>
-        <div ref={listRef} role="list" aria-label="Files and folders" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+        <div ref={listRef} role="list" aria-label={t("Files and folders")} className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
           {sorted.map((item, idx) => {
             const actions = actionsFor(item);
             const isSel = selected?.has(itemKey(item));
@@ -327,7 +328,7 @@ export function FileList({
                   role="listitem"
                   data-row
                   tabIndex={0}
-                  aria-label={`${item.kind === "folder" ? "Folder" : "File"} ${item.name}`}
+                  aria-label={t(item.kind === "folder" ? "Folder {name}" : "File {name}", { name: item.name })}
                   onDoubleClick={() => onOpen(item)}
                   onKeyDown={(e) => onKey(e, item, idx)}
                   className={cn(
@@ -380,19 +381,19 @@ export function FileList({
             <Checkbox
               checked={allSelected ? true : someSelected ? "indeterminate" : false}
               onCheckedChange={(v) => onSelectedChange(v === true ? new Set(sorted.map(itemKey)) : new Set())}
-              aria-label="Select all"
+              aria-label={t("Select all")}
             />
           ) : null}
         </span>
-        <SortHeader k="name" sort={sort} onSort={onSort}>Name</SortHeader>
-        {showOwner ? <span>Owner</span> : null}
+        <SortHeader k="name" sort={sort} onSort={onSort}>{t("Name")}</SortHeader>
+        {showOwner ? <span>{t("Owner")}</span> : null}
         <SortHeader k="updated" sort={sort} onSort={onSort}>{dateLabel}</SortHeader>
         <SortHeader k="size" sort={sort} onSort={onSort} className="justify-self-end">
-          Size
+          {t("Size")}
         </SortHeader>
         <span />
       </div>
-      <div ref={listRef} role="list" aria-label="Files and folders" className="divide-y divide-border/60">
+      <div ref={listRef} role="list" aria-label={t("Files and folders")} className="divide-y divide-border/60">
         {sorted.map((item, idx) => {
           const actions = actionsFor(item);
           const isSel = selected?.has(itemKey(item));
@@ -402,7 +403,7 @@ export function FileList({
                 role="listitem"
                 data-row
                 tabIndex={0}
-                aria-label={`${item.kind === "folder" ? "Folder" : "File"} ${item.name}`}
+                aria-label={t(item.kind === "folder" ? "Folder {name}" : "File {name}", { name: item.name })}
                 onDoubleClick={() => onOpen(item)}
                 onKeyDown={(e) => onKey(e, item, idx)}
                 className={cn(

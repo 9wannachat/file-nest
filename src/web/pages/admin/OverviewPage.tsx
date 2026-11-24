@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { useApi } from "@/lib/hooks";
 import { formatBytes, formatDate } from "@/lib/utils";
+import { t } from "@/i18n";
 
 interface Overview {
   users: { total: number; active: number; invited: number; disabled: number; admins: number; mfa: number };
@@ -52,66 +53,66 @@ export function OverviewPage() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat
           icon={<Users />}
-          label="Members"
+          label={t("Members")}
           value={n(data.users.total)}
-          hint={`${n(data.users.active)} active · ${n(data.users.invited)} invited · ${n(data.users.disabled)} disabled`}
+          hint={t("{active} active · {invited} invited · {disabled} disabled", { active: n(data.users.active), invited: n(data.users.invited), disabled: n(data.users.disabled) })}
           to="/admin/members"
         />
         <Stat
           icon={<FileStack />}
-          label="Storage used"
+          label={t("Storage used")}
           value={formatBytes(n(data.files.bytes))}
-          hint={`${data.capacity.capBytes ? `of ${formatBytes(data.capacity.capBytes)} capacity · ` : ""}${n(data.files.count)} files · ${data.capacity.membersNearQuota} member(s) ≥80% of quota`}
+          hint={`${data.capacity.capBytes ? t("of {cap} capacity · ", { cap: formatBytes(data.capacity.capBytes) }) : ""}${t("{files} files · {near} member(s) ≥80% of quota", { files: n(data.files.count), near: data.capacity.membersNearQuota })}`}
           to="/admin/usage"
         />
-        <Stat icon={<Upload />} label="Uploads (24 h)" value={n(data.uploads24h.n)} hint={formatBytes(n(data.uploads24h.bytes))} />
-        <Stat icon={<Globe />} label="Public links" value={data.publicLinks} hint="Active links" to="/admin/links" />
+        <Stat icon={<Upload />} label={t("Uploads (24 h)")} value={n(data.uploads24h.n)} hint={formatBytes(n(data.uploads24h.bytes))} />
+        <Stat icon={<Globe />} label={t("Public links")} value={data.publicLinks} hint={t("Active links")} to="/admin/links" />
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <ShieldCheck className="size-4 text-primary" aria-hidden /> Security
+              <ShieldCheck className="size-4 text-primary" aria-hidden />{" "}{t("Security")}
             </CardTitle>
             <CardDescription>
-              {n(data.users.admins)} admin(s) · {data.signedInUsers} member(s) signed in now
+              {n(data.users.admins)}{" "}{t("admin(s) ·")}{" "}{data.signedInUsers}{" "}{t("member(s) signed in now")}
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-2">
             <div className="flex justify-between text-sm">
-              <span>Two-factor authentication</span>
+              <span>{t("Two-factor authentication")}</span>
               <span className="tabular-nums">{mfaPct}%</span>
             </div>
-            <Progress value={mfaPct} aria-label="Members with 2FA" />
+            <Progress value={mfaPct} aria-label={t("Members with 2FA")} />
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Storage</CardTitle>
-            <CardDescription>Files per R2 target</CardDescription>
+            <CardTitle>{t("Storage")}</CardTitle>
+            <CardDescription>{t("Files per R2 target")}</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-2">
             {data.storage.map((s) => (
               <div key={s.id} className="flex items-center gap-2 text-sm">
                 {s.lastCheckOk === false ? (
-                  <CircleAlert className="size-4 text-destructive" aria-label="Check failed" />
+                  <CircleAlert className="size-4 text-destructive" aria-label={t("Check failed")} />
                 ) : (
-                  <CheckCircle2 className="size-4 text-success" aria-label="OK" />
+                  <CheckCircle2 className="size-4 text-success" aria-label={t("OK")} />
                 )}
                 <span className="flex-1 truncate">{s.name}</span>
                 <span className="text-muted-foreground tabular-nums">
-                  {n(s.count)} files · {formatBytes(n(s.bytes))}
+                  {n(s.count)}{" "}{t("files ·")}{" "}{formatBytes(n(s.bytes))}
                 </span>
               </div>
             ))}
-            {!data.storage.length ? <p className="text-sm text-muted-foreground">No storage configured.</p> : null}
+            {!data.storage.length ? <p className="text-sm text-muted-foreground">{t("No storage configured.")}</p> : null}
           </CardContent>
         </Card>
       </div>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Activity className="size-4" aria-hidden /> Recent activity
+            <Activity className="size-4" aria-hidden />{" "}{t("Recent activity")}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -125,7 +126,7 @@ export function OverviewPage() {
                 <span className="ml-auto text-xs text-muted-foreground">{formatDate(e.createdAt)}</span>
               </li>
             ))}
-            {!data.recentEvents.length ? <li className="py-2 text-muted-foreground">No activity yet.</li> : null}
+            {!data.recentEvents.length ? <li className="py-2 text-muted-foreground">{t("No activity yet.")}</li> : null}
           </ul>
         </CardContent>
       </Card>
