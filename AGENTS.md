@@ -1,64 +1,38 @@
 # FileNest — agent guide
+Self-hosted file manager: one repo, one Cloudflare Worker (Hono) serving the React UI, `/api`, `/auth` and `/s` share links. Code: `src/worker`, `src/web`, `src/shared`, `packages/mcp`, `migrations/`, `tests/{worker,web}`, `e2e/`.
 
-Self-hosted file manager. **One repo, one Cloudflare Worker**, serving the React UI, the API and public share links on one origin.
-This file is the shared source of conventions for every coding agent (Claude Code reads it via `CLAUDE.md`).
+## Workflow (mandatory, skill `plan-guard`)
+1. **Analyze** read-only. 2. **Propose** (Thai if the owner writes Thai): problem, files, impact, test method; mark what needs real Cloudflare/Google/device. 3. **Wait** for `ทำเลย` / `confirm` / `go ahead`; questions ≠ approval. 4. **Implement** approved scope only; scope grows ⇒ re-propose.
+Provisioning, deploys, remote migrations, real Cloudflare/Google config ⇒ explicit instruction for *that* action.
 
-## Workflow (mandatory) — see `.claude/skills/plan-guard`
-1. **Analyze** (read-only): no edits, installs, or Cloudflare/Google changes.
-2. **Propose** (Thai if the owner writes Thai): architecture, D1 schema, API contracts, files, risks, tests; separate *local-verifiable* from *needs real Cloudflare/Google/device*.
-3. **Wait** for an explicit go (`ทำเลย`, `confirm`, `go ahead`). Questions/discussion are not approval.
-4. **Implement** only the approved scope. Run checks after each change; before handing off run `pnpm typecheck && pnpm test && pnpm build` (and `pnpm e2e` when UI/PWA/share/upload changed).
-5. Provisioning, deploys, remote migrations, or changing real Cloudflare/Google config need an explicit instruction **for that action**.
-
-## Layout
-```
-src/worker/         Hono Worker: routes/, services/, auth/, authz.ts, storage/s3.ts, lib/, db/
-src/web/            React SPA (Vite, Tailwind v4, shadcn/ui in components/ui via components.json), theme.tsx, pwa/, upload/
-src/shared/         API payload types
-src/dev/fake-s3.ts  In-process fake R2 S3 API (tests + local dev only)
-packages/mcp/       Local MCP server (stdio) for AI assistants, uses a personal access token
-migrations/         Hand-written D1 SQL (source of truth); src/worker/db/schema.ts mirrors it
-tests/worker        Vitest in workerd (@cloudflare/vitest-plugin) with real local D1 + fake S3
-tests/web           Vitest + jsdom
-e2e/                Playwright against an isolated local stack (scripts/e2e-server.mjs)
-```
+## Routine work
+- `FileNest-Master-Prompt.md` (root, if present) is reference only: search headings, read just the relevant section. Absent ⇒ use this file + code.
+- Main agent first. Subagents/skills only for a clear role; hand over only scope, paths, diff. Don't have several agents re-explore the same area.
+- Reuse existing code; change only what the task needs; new abstraction only with a real reason. No new deps/plugins without a plan.
+- Read only the code/log ranges you need, but keep diagnostic error detail.
+- After changes run the relevant tests; before handoff `pnpm typecheck && pnpm test && pnpm build` (+ `pnpm e2e` if UI/PWA/share/upload changed).
+- Touching auth, permissions, share revocation, upload/R2 finalize, preview or PWA cache ⇒ regression tests + skill `project-security-review` + agent `security-audit`; fix findings in scope and re-test.
+- Reply briefly: what changed, what was tested, results, what still needs confirmation. Add detail only for risks/decisions.
 
 ## Commands
-| Task | Command |
-|---|---|
-| First local setup | `pnpm install && pnpm setup:local` |
-| Dev (app :8788 + fake R2 :9000) | `pnpm dev` → open `http://localhost:8788/auth/dev-login` |
-| Typecheck / unit+integration / build | `pnpm typecheck` · `pnpm test` · `pnpm build` |
-| Browser E2E (isolated :8789/:9001) | `pnpm e2e` |
-| Local D1 migration | `pnpm db:migrate:local` |
-| Secret scan before publishing | `pnpm scan:secrets` |
+Setup `pnpm install && pnpm setup:local` · Dev `pnpm dev` (app :8788, fake R2 :9000, `/auth/dev-login`) · E2E `pnpm e2e` (:8789/:9001) · `pnpm db:migrate:local` · `pnpm scan:secrets` before publishing.
 
 ## Invariants — do not break
-- **Deny by default.** Every file/folder access goes through `src/worker/authz.ts` (`fileFor`, `folderFor`, `writableFolderId`). Unauthorized ⇒ **404**. Admin role grants **no** file access.
-- **Client never picks storage.** Bucket, endpoint and object keys come from D1 (`storage_targets`, `upload_sessions`). Endpoint = `https://<32-hex account>.r2.cloudflarestorage.com/<bucket>` only.
-- **Upload sessions pin** `storage_id`, `staging_key`, `final_key` at creation. Switching the default affects only new sessions.
-- **Finalize**: lease-claim → HEAD staging (size) → `CopyObject` with `x-amz-copy-source-if-match` → HEAD final → sniff final → insert row with `ON CONFLICT(upload_session_id) DO NOTHING`. Must stay idempotent and recover when R2 succeeded but D1 didn't.
-- **Content is streamed by the Worker** (`services/content.ts`): never redirect to R2, never return presigned GETs, never forward R2 headers. HEAD + single byte range, 206/416, `nosniff`, `no-store`, sandbox CSP; HTML/SVG/unknown ⇒ `application/octet-stream` attachment.
-- **Share tokens**: 256-bit random, stored as SHA-256 (+ AES-GCM copy for re-copying the link). Checked against D1 on **every** request.
-- **Sessions**: random token, SHA-256 in D1, `HttpOnly; Secure; SameSite=Lax`, rotated on login; CSRF header + Origin check on every state-changing request.
-- **API tokens (PAT)** `fnpat_…`: SHA-256 in D1, shown once, expiring, revocable, rate-limited. Bearer requests are matched against the allowlist in `auth/middleware.ts#TOKEN_ROUTES` (read/list/download, create folder, upload). Never add sharing, trash/delete, rename/move, admin or token management to it without a plan. Cookie + Bearer together ⇒ 400.
-- **Share passwords**: PBKDF2-SHA256 (100k) + salt; unlock cookie is HMAC(link id, password_version, expiry), `Path=/s/<token>`, `SameSite=Strict`, 12 h; every `/s/*` request re-checks it. Lockout is per (link, client) in `share_unlock_attempts`, reserved atomically before PBKDF2. The unlock form relies on `Sec-Fetch-Site` because the page's `no-referrer` makes browsers send `Origin: null`.
-- **Sign-in paths all end in `finishLogin`** (`routes/auth.ts`): 2FA members get an MFA challenge (cookie `fn_mfa`, 5 min) instead of a session; policy-required members without 2FA get a session limited to enrollment (`needsMfaSetup`). Never create a session directly elsewhere.
-- **Brute-force budgets** use `reserveAttempt` BEFORE verifying (passwords, MFA codes, re-auth). Unknown accounts still run PBKDF2 (dummy hash). Login errors stay generic.
-- **Storage limits & placement**: enforced only in `createUpload`'s single `WITH pick … INSERT … SELECT … RETURNING storage_id`: it picks the first target by `priority` that accepts uploads, has not failed its last check and has room (`capacity_bytes` NULL = unlimited), and checks the member quota (or `quota_unlimited`); trash and unexpired in-flight sessions count. Keep any new upload path going through it. Client pre-checks are UX only.
-- **Admin Console**: `routes/admin.ts`, session-only; sensitive actions call `recent()` (re-auth within 10 min). Admins never get private file names/contents — only aggregates, member metadata and public links. In correlated subqueries write table-qualified columns literally (`"users"."id"`); Drizzle renders `${table.col}` unqualified without joins.
-- **MCP** (`packages/mcp`): local stdio server; all local reads/writes go through `Workdir` (no `..`, no symlink escape, no silent overwrite).
-- **Logs** go through `lib/log.ts` (redaction). Never log tokens, cookies, presigned URLs or secrets.
-- **UI**: use shadcn/ui components and theme tokens (`bg-background`, `text-muted-foreground`, `bg-primary`, …) from `src/web/index.css`; no hard-coded palette colors. Add components with `npx shadcn@latest add <name>` and rewrite `from "cn"` imports to `@/lib/utils`. Keep text pairs ≥ WCAG AA in both themes.
-- **Theme**: Light/Dark/System via `.dark` on `<html>`; `public/theme-init.js` applies it before paint (CSP forbids inline script). The only Web Storage use allowed is the `filenest-theme` key (enforced by `tests/web/storage-hygiene.test.ts`); `fn_theme` cookie only ever maps to `light`/`dark` on the share page.
-- **PWA** caches the app shell only; `/api`, `/auth`, `/s` are network-only. No user data in Cache Storage / IndexedDB / Web Storage.
-- **D1**: parameterized queries only (Drizzle / `sql` template). ≤100 bound params per statement — prefer subqueries over large `IN (...)` lists. Use `atomicBatch` for multi-statement atomic writes mixing raw SQL.
-- **Migrations** are append-only once released. Keep `schema.ts` in sync (`tests/worker/schema.test.ts`).
-
-## Agents & skills
-Project agents: `.claude/agents/*.md` (planner, doctor, db-migration, worker-service, web-app, test-writer, e2e-test, ux-verify, reviewer, security-audit).
-Project skills: `.claude/skills/<name>/SKILL.md`.
-Routing: R2 switching ⇒ `worker-service` + `testing` + `reviewer`. Anything touching auth, share, upload or preview ⇒ also `security-audit` + `project-security-review`. Findings must be fixed in scope and re-tested.
+- Authz: every file/folder access via `src/worker/authz.ts` (`fileFor`/`folderFor`/`writableFolderId`); unauthorized ⇒ 404; admin role grants no file access.
+- Storage: client never picks it; bucket/endpoint/keys from D1; endpoint only `https://<32-hex>.r2.cloudflarestorage.com/<bucket>`. Upload sessions pin `storage_id`/`staging_key`/`final_key`.
+- Placement + quota/capacity only in `createUpload`'s single `WITH pick … INSERT … SELECT … RETURNING` (priority, accepting, last check ok, `capacity_bytes` NULL = unlimited, `quota_unlimited`; trash + in-flight count). Client checks are UX only.
+- Finalize: lease-claim → HEAD staging → `CopyObject` + `x-amz-copy-source-if-match` → HEAD final → sniff → insert `ON CONFLICT(upload_session_id) DO NOTHING`; idempotent, recovers R2-ok/D1-failed.
+- Content streamed by Worker (`services/content.ts`): no R2 redirect/presigned GET/forwarded R2 headers; HEAD + single Range 206/416, `nosniff`, `no-store`, sandbox CSP; HTML/SVG/unknown ⇒ octet-stream attachment.
+- Share tokens 256-bit, SHA-256 (+AES-GCM copy), checked in D1 every request. Share passwords PBKDF2 100k; unlock cookie HMAC(link, password_version, expiry) `Path=/s/<token>` Strict 12 h, re-checked on every `/s/*`; lockout per (link, client) in `share_unlock_attempts`, reserved before PBKDF2; unlock form uses `Sec-Fetch-Site` (page sends `Origin: null`).
+- Sessions: SHA-256 in D1, `HttpOnly; Secure; SameSite=Lax`, rotated on login; CSRF header + Origin on state changes. All sign-ins end in `finishLogin` (`routes/auth.ts`; MFA challenge `fn_mfa`, `needsMfaSetup`).
+- `reserveAttempt` BEFORE verifying passwords/MFA/re-auth; unknown accounts run PBKDF2 (dummy hash); generic login errors.
+- PAT `fnpat_`: SHA-256, shown once, expiring, revocable, rate-limited; Bearer only for `auth/middleware.ts#TOKEN_ROUTES` (read/list/download, create folder, upload) — never add share/delete/rename/move/admin/token routes without a plan; cookie + Bearer ⇒ 400.
+- Admin (`routes/admin.ts`): session-only, sensitive actions `recent()` (10 min); never private file names/contents. Correlated subqueries use literal `"users"."id"` (Drizzle drops the table prefix).
+- D1: parameterized only, ≤100 params/statement (subqueries over big `IN`), `atomicBatch` for atomic multi-statement raw SQL. Migrations append-only; keep `db/schema.ts` in sync (`tests/worker/schema.test.ts`).
+- Logs via `lib/log.ts`; never log tokens, cookies, presigned URLs, secrets.
+- PWA caches app shell only; `/api`, `/auth`, `/s` network-only; no user data in Cache Storage/IndexedDB/Web Storage. Only Web Storage key: `filenest-theme` (`tests/web/storage-hygiene.test.ts`); `fn_theme` cookie ⇒ `light`/`dark` on share page; `public/theme-init.js` (no inline script).
+- UI: shadcn/ui (`npx shadcn@latest add`, rewrite `cn` import to `@/lib/utils`) + theme tokens from `src/web/index.css`, no hard-coded colors, WCAG AA both themes.
+- MCP (`packages/mcp`): local fs only through `Workdir` (no `..`, symlink escape, silent overwrite).
 
 ## Style
-TypeScript strict, ESM, 2-space indent, double quotes. UI copy in English (i18n not yet in scope). Keep comments for *why*, not *what*.
+TS strict, ESM, 2 spaces, double quotes, English UI copy, comments explain *why*.
